@@ -55,3 +55,75 @@ download_CHIRPd <- function(date,
               overwrite = TRUE)
   unlink(unzipfile)
 }
+
+create_CHIRPd_netcdf <- function(path, years = 1981:2019) {
+  chirps_list <- list()
+  chirp_path <- sprintf("%s/data/CHIRP_0.05/CHIRPd/", path)
+  output <- sprintf("%s/data/", path)
+  cf <-  sprintf("%s/CHIRPd_%s_%s.nc", output, years[1], years[length(years)])
+  
+  chirps_raster <- list.files(path = chirp_path,
+                              pattern = "\\.tif$", 
+                              full.names = TRUE, 
+                              recursive=TRUE) %>% 
+    raster::stack() %>% 
+    raster::brick() 
+  writeRaster(
+    x = chirps_raster,
+    filename =  cf,
+    overwrite = TRUE
+  )
+}
+
+
+create_CHIRPm_netcdf <- function(path, years = 1981:2019) {
+  chirps_list <- list()
+  chirp_path <- sprintf("%s/data/CHIRP_0.05/CHIRPm/", path)
+  output <- sprintf("%s/data/", path)
+  cf <-  sprintf("%s/CHIRPd_%s_%s.nc", output, years[1], years[length(years)])
+  
+  chirps_raster <- list.files(path = chirp_path,
+                              pattern = "\\.tif$", 
+                              full.names = TRUE, 
+                              recursive=TRUE) %>% 
+    raster::stack() %>% 
+    raster::brick() 
+  writeRaster(
+    x = chirps_raster,
+    filename =  cf,
+    overwrite = TRUE
+  )
+}
+
+test_chirpd <- function(path, years) {
+  chirp_path <- sprintf("%s/data/CHIRP_0.05/CHIRPd/", path) 
+  init_year <- as.Date(sprintf("%s-01-01", years[1]))
+  last_year <- as.Date(sprintf("%s-12-31", years[length(years)]))
+  expected_dates <- seq(init_year, last_year, "day")
+  chirps_raster <- list.files(path = chirp_path,
+                              pattern = "\\.tif$", 
+                              full.names = TRUE, 
+                              recursive=TRUE) 
+  if (length(expected_dates) != length(chirps_raster)) {
+    stop("CHIRPd files are imcompleted!")
+  }
+}
+
+test_chirpm <- function(path, years) {
+  chirp_path <- sprintf("%s/data/CHIRP_0.05/CHIRPm/", path) 
+  init_year <- as.Date(sprintf("%s-01-01", years[1]))
+  last_year <- as.Date(sprintf("%s-12-31", years[length(years)]))
+  expected_dates <- seq(init_year, last_year, "month")
+  chirps_raster <- list.files(path = chirp_path,
+                              pattern = "\\.tif$", 
+                              full.names = TRUE, 
+                              recursive=TRUE) 
+  if (length(expected_dates) != length(chirps_raster)) {
+    stop("CHIRPm files are imcompleted!")
+  }
+}
+
+test_CHIRP <- function(path, years = 1981:2019) {
+  test_chirpd(path, years)
+  test_chirpm(path, years)
+}
