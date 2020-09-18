@@ -95,6 +95,38 @@ create_CHIRPm_netcdf <- function(path, years = 1981:2019) {
   )
 }
 
+create_CHIRPd_netcdf2 <- function(path, years = 1981:2019) {
+  #  necessary paths
+  chirp_path <- sprintf("%s/data/CHIRP_0.05/CHIRPd/", path)
+  output <- sprintf("%s/data/", path)
+  
+  for (year in years) {
+    # List all files by year and create a datacube
+    chirps_raster <- list.files(path = chirp_path,
+                                pattern = year %>% as.character(), 
+                                full.names = TRUE, 
+                                recursive=TRUE) %>% 
+      raster::stack() %>% 
+      raster::brick() 
+    
+    # Test if exist the expected number of files
+    test_length_by_years(x = chirps_raster, year)
+    
+    # Output name
+    cf <-  sprintf("%s/CHIRPd_%s.nc", output, year)
+    
+    # Save it!
+    message(sprintf("Saving CHIRPd netcdf year: %s", year))
+    writeRaster(
+      x = chirps_raster,
+      filename =  cf,
+      overwrite = TRUE
+    ) 
+  }
+}
+
+
+# Fast Testing!
 test_chirpd <- function(path, years) {
   chirp_path <- sprintf("%s/data/CHIRP_0.05/CHIRPd/", path) 
   init_year <- as.Date(sprintf("%s-01-01", years[1]))
@@ -121,6 +153,20 @@ test_chirpm <- function(path, years) {
   if (length(expected_dates) != length(chirps_raster)) {
     stop("CHIRPm files are imcompleted!")
   }
+}
+
+#' Test is exist 
+test_length_by_years <- function(x, year) {
+  nlyrs <- nlayers(x)
+  if (leap_year(year)) {
+    y_length <- 366
+  } else {
+    y_length <- 365
+  }
+  condition <- nlyrs  ==  y_length
+  if (!condition) {
+    stop(sprintf("Missing files!\nActual:%s\nExpected:%s", nlyrs, y_length))
+  } 
 }
 
 test_CHIRP <- function(path, years = 1981:2019) {

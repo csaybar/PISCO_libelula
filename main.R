@@ -25,7 +25,7 @@ for (index in seq_along(day_seq)) {
 test_CHIRP(path)
 
 # 5. Create data cubes
-create_CHIRPd_netcdf(path)
+create_CHIRPd_netcdf2(path) 
 create_CHIRPm_netcdf(path)
 
 
