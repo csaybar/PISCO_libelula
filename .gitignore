@@ -1,0 +1,12 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+.httr-oauth
+inst/doc
+inst/python/__pycache__/
+docs
+static
+pkgdown/favicon
+revdep
+
