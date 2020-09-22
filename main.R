@@ -2,17 +2,19 @@
 
 # 1. Load utils functions
 library(sf)
+library(xts)
+library(qmap)
+library(RCurl)
 library(raster)
+library(R.utils)
+library(magrittr)
 library(tidyverse)
 library(lubridate)
-library(RCurl)
-library(magrittr)
-library(R.utils)
 source("utils.R")
 options(max.print=1000)
 
 # 2. Define a path to save final and intermediate files
-path = "/home/csaybar/"
+path <- "/home/csaybar/"
 day_seq <- seq(as.Date("1981-01-01"), as.Date("2019-12-31"), "day")
 month_seq <- seq(as.Date("1981-01-01"), as.Date("2019-12-31"), "month")
 
@@ -41,4 +43,5 @@ download_senamhi_data(path)
 # See: CUTOFF: A spatio-temporal imputation method (2015)
 cutoff_dataset_creator(path)
 
-# 9. Create
+# 9. Create quantile models for each station
+qm_dataset_creator(path)

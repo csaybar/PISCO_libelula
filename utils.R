@@ -515,3 +515,89 @@ cutoff_dataset_creator <- function(senamhi_gauge_data) {
   gauge_data <- sprintf("%s/data/senamhi_cutoff_ratios.RData", path)
   save(cutoff_ratios, file = gauge_data)
 }
+
+# PISCOp v2.1 function
+qmap_set_m <- function(obs_ts, gridded_ts,date) {
+  obs_ts <- xts(obs_ts, date)
+  gridded_ts <- xts(gridded_ts, date)
+  qm_fit <- fitQmapQUANT(coredata(obs_ts),
+                         coredata(gridded_ts) ,
+                         qstep = 0.01,
+                         nboot = 1,
+                         wet.day = TRUE,
+                         type = "tricube")
+  qm_fit
+}
+
+# PISCOp v2.1 function
+qmap_set_d <- function(obs_ts, gridded_ts, date) {
+  obs_ts <- xts(obs_ts, date)
+  gridded_ts <- xts(gridded_ts, date)
+  qm_fit <- fitQmapQUANT(coredata(obs_ts),
+                         coredata(gridded_ts) ,
+                         qstep = 0.01, nboot = 1, wet.day = T, type = "tricube")
+  qm_fit
+}
+
+
+qm_daily_creator <- function(path) {
+  # 1. Load rain gauge data
+  senamhi_gauge_data <- download_senamhi_data(path)
+  daily_gauge_data <- senamhi_gauge_data$daily
+  day_seq <- as.Date(names(daily_gauge_data)[-1], "date_%Y%m%d")
+
+  # 2. Read netcdf data
+  sat_data <- path %>%
+    sprintf("%sdata", .) %>%
+    list.files(pattern = "CHIRPd", full.names = TRUE) %>%
+    lapply(brick)
+
+  # 3. Quantile time!
+  qm_raingauge_list <- list()
+  for (index in seq_len(length(daily_gauge_data))) {
+    rain_gauge <- daily_gauge_data[index,]
+    rain_gauge_data <- rain_gauge@data[, -1] %>% as.numeric()
+    rain_gauge_name <- rain_gauge@data[, 1] %>% as.character()
+
+    ## Extract sat data
+    batch_extract <- function(x) raster::extract(x, rain_gauge) %>% as.numeric()
+    sat_gauge_data <- lapply(sat_data, batch_extract) %>% unlist()
+
+    ## Fit quantile map according to PISCOp
+    qm_raingauge_list[[rain_gauge_name]] <- qmap_set_d(rain_gauge_data, sat_gauge_data, day_seq)
+  }
+  qm_raingauge_list
+}
+
+qm_month_creator <- function(path, month_seq) {
+  # 1. Load rain gauge data
+  senamhi_gauge_data <- download_senamhi_data(path)
+  monthly_gauge_data <- senamhi_gauge_data$monthly
+  month_seq <- as.Date(names(monthly_gauge_data)[-1], "date_%Y%m%d")
+
+  # 2. Read netcdf data
+  sat_data <- brick(sprintf("%s/data/CHIRPm_1981_2019.nc", path))
+
+  # 3. Quantile time!
+  qm_raingauge_list <- list()
+  for (index in seq_len(length(monthly_gauge_data))) {
+    rain_gauge <- monthly_gauge_data[index,]
+    rain_gauge_data <- rain_gauge@data[, -1] %>% as.numeric()
+    rain_gauge_name <- rain_gauge@data[, 1] %>% as.character()
+
+    ## Extract sat data
+    sat_gauge_data <- raster::extract(sat_data, rain_gauge) %>% as.numeric()
+
+    ## Fit quantile map according to PISCOp
+    qm_raingauge_list[[rain_gauge_name]] <- qmap_set_m(rain_gauge_data, sat_gauge_data, month_seq)
+  }
+  qm_raingauge_list
+}
+
+qm_dataset_creator <- function(path) {
+  qm_rg_daily_list <- qm_daily_creator(path)
+  qm_rg_month_list <- qm_month_creator(path)
+  qm_list <- list(qm_monthly = qm_rg_month_list, qm_daily = qm_rg_daily_list)
+  gauge_data <- sprintf("%s/data/qm_models.RData", path)
+  save(qm_list, file = gauge_data)
+}
