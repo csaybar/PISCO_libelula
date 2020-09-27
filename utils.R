@@ -27,7 +27,7 @@ create_folders <- function(path) {
 
 
 download_CHIRPm <- function(date,
-                            set_dir = getwd(),
+                            path,
                             BBlonMin = -86,
                             BBlonMax = -66,
                             BBlatMin = -19.25,
@@ -42,18 +42,18 @@ download_CHIRPm <- function(date,
   chirp_monthly_file <- paste0(chirp_monthly_path, basename(chirp_file))
   writeRaster(chirp_crop, chirp_monthly_file, overwrite = TRUE)
   unlink(tmpfile)
+  chirp_crop
 }
 
 
 download_CHIRPd <- function(date,
-                            set_dir = getwd(),
+                            path,
                             BBlonMin = -86,
                             BBlonMax = -66,
                             BBlatMin = -19.25,
                             BBlatMax = 1.25) {
   chirps_daily_path <- sprintf("%s/data/CHIRP_0.05/CHIRPd/", path)
   server <- "https://data.chc.ucsb.edu/products/CHIRPS-2.0/global_daily/tifs/p05"  #ftp data
-
   chirp_file <- sprintf("%s/%s/chirps-v2.0.%s.tif.gz",
                         server,
                         year(date),
@@ -69,6 +69,7 @@ download_CHIRPd <- function(date,
               filename = paste0(chirps_daily_path, file_name),
               overwrite = TRUE)
   unlink(unzipfile)
+  chirp_crop
 }
 
 create_CHIRPd_netcdf <- function(path, years = 1981:2019) {
@@ -287,7 +288,6 @@ download_senamhi_data <- function(path) {
 
 # mgauge is the monthly dataset
 cutoff_dataset_creator_m <- function(mgauge) {
-  mgauge <- senamhi_gauge_data$monthly
   month_ratios_db <- list()
   for (index  in seq_len(nrow(mgauge))) {
     raingauge_code <- as.character(mgauge[index, 1][[1]])
@@ -398,7 +398,6 @@ cutoff_dataset_creator_m <- function(mgauge) {
 
 # dgauge is the daily dataset
 cutoff_dataset_creator_d <- function(dgauge) {
-  dgauge <- senamhi_gauge_data$daily
   daily_ratios_db <- list()
   for (index  in seq_len(nrow(dgauge))) {
     print(index)
@@ -414,7 +413,7 @@ cutoff_dataset_creator_d <- function(dgauge) {
     senamhi_gauge_selected <- senamhi_gauge_selected[-removed_one,]
 
     if (length(senamhi_gauge_selected) == 0) {
-      month_ratios_db[[raingauge_code]] <- list(cm = rep(1,12),
+      daily_ratios_db[[raingauge_code]] <- list(cm = rep(1,12),
                                                 rm = rep(1,12),
                                                 raingauges = NA)
       next
@@ -438,7 +437,7 @@ cutoff_dataset_creator_d <- function(dgauge) {
 
     ## If the specific rain gauge larger than 10 years?
     if (senamhi_gauge_one_length < min_day) {
-      month_ratios_db[[raingauge_code]] <- list(cm = rep(1,12),
+      daily_ratios_db[[raingauge_code]] <- list(cm = rep(1,12),
                                                 rm = rep(1,12),
                                                 raingauges = NA)
       next
@@ -471,7 +470,7 @@ cutoff_dataset_creator_d <- function(dgauge) {
 
     # If not any rain gauge accomplish the requirements, stop the function
     if (is.null(selected_raingauges)) {
-      month_ratios_db[[raingauge_code]] <- list(cm = rep(1,12),
+      daily_ratios_db[[raingauge_code]] <- list(cm = rep(1,12),
                                                 rm = rep(1,12),
                                                 raingauges = NA)
       next
@@ -499,7 +498,6 @@ cutoff_dataset_creator_d <- function(dgauge) {
       ] %>% as.numeric() %>% mean(na.rm=TRUE)
       rm_data <- append(rm_data, month_data)
     }
-    print("done")
     daily_ratios_db[[raingauge_code]] <- list(cm = cm_data,
                                               rm = rm_data,
                                               raingauges = cor_station_code)
@@ -507,9 +505,11 @@ cutoff_dataset_creator_d <- function(dgauge) {
   daily_ratios_db
 }
 
-cutoff_dataset_creator <- function(senamhi_gauge_data) {
+cutoff_dataset_creator <- function(path) {
   senamhi_gauge_data <- download_senamhi_data(path)
+  message("Creating CUTOFF monthly parameters ... please wait")
   monthly_ratios <- cutoff_dataset_creator_m(senamhi_gauge_data$monthly)
+  message("Creating CUTOFF daily parameters ... please wait")
   daily_ratios <- cutoff_dataset_creator_d(senamhi_gauge_data$daily)
   cutoff_ratios <- list(cutoff_monthly = monthly_ratios, cutoff_daily = daily_ratios)
   gauge_data <- sprintf("%s/data/senamhi_cutoff_ratios.RData", path)
@@ -600,4 +600,24 @@ qm_dataset_creator <- function(path) {
   qm_list <- list(qm_monthly = qm_rg_month_list, qm_daily = qm_rg_daily_list)
   gauge_data <- sprintf("%s/data/qm_models.RData", path)
   save(qm_list, file = gauge_data)
+}
+
+run_PISCOp <- function(path, month = "1981-01-01") {
+
+  # Wrangling dates
+  month <- as.Date(month)
+  days <- paste0(
+    format(month, "%Y-%m-"),
+    month %>% days_in_month() %>% seq_len() %>% sprintf("%02d", .) # number of days
+  ) %>% as.Date()
+
+  # 1. Download satellite images
+  chirpx_m <- download_CHIRPm(date = month, path = path)
+  chirpx_d <- lapply(days[1:4], download_CHIRPd) %>% stack()
+
+
+  # 2. Complete rain gauge
+
+  # 3. Interpolation
+
 }
