@@ -15,14 +15,20 @@ print.sf <- function(x) {
 
 create_folders <- function(path) {
   dir.create(sprintf('%s/data/', path), showWarnings = FALSE)
-  # chrips diario
-  dir.create(sprintf('%s/data/CHIRP_0.1/', path), showWarnings = FALSE)
-  dir.create(sprintf('%s/data/CHIRP_0.1/CHIRPd/', path), showWarnings = FALSE)
-  dir.create(sprintf('%s/data/CHIRP_0.1/CHIRPm/', path), showWarnings = FALSE)
+  # CHIRPM
+  dir.create(sprintf('%s/data/CHIRPM/', path), showWarnings = FALSE)
+  dir.create(sprintf('%s/data/CHIRPM/CHIRPd/', path), showWarnings = FALSE)
+  dir.create(sprintf('%s/data/CHIRPM/CHIRPm/', path), showWarnings = FALSE)
 
+  # CHIRP
   dir.create(sprintf('%s/data/CHIRP_0.05/', path), showWarnings = FALSE)
   dir.create(sprintf('%s/data/CHIRP_0.05/CHIRPd/', path), showWarnings = FALSE)
   dir.create(sprintf('%s/data/CHIRP_0.05/CHIRPm/', path), showWarnings = FALSE)
+
+  # PISCOp
+  dir.create(sprintf('%s/data/PISCOp/', path), showWarnings = FALSE)
+  dir.create(sprintf('%s/data/PISCOp/PISCOpd/', path), showWarnings = FALSE)
+  dir.create(sprintf('%s/data/PISCOp/PISCOpm/', path), showWarnings = FALSE)
 }
 
 
@@ -301,6 +307,7 @@ cutoff_dataset_creator_m <- function(mgauge) {
     removed_one <- which(senamhi_gauge_selected$V_COD_ESTA  == senamhi_gauge_one$V_COD_ESTA)
     senamhi_gauge_selected <- senamhi_gauge_selected[-removed_one,]
 
+    # If there is no any rain gauges NA will be assigned
     if (length(senamhi_gauge_selected) == 0) {
       month_ratios_db[[raingauge_code]] <- list(cm = rep(1,12),
                                                 rm = rep(1,12),
@@ -324,8 +331,9 @@ cutoff_dataset_creator_m <- function(mgauge) {
     senamhi_gauge_one_length <- senamhi_gauge_one_dates %>%
       length()
 
-    ## If the specific rain gauge larger than 10 years?
+    ## Is the specific rain gauge larger than 10 years?
     if (senamhi_gauge_one_length < min_month) {
+      # If not, NA will be assigned
       month_ratios_db[[raingauge_code]] <- list(cm = rep(1,12),
                                                 rm = rep(1,12),
                                                 raingauges = NA)
@@ -357,7 +365,7 @@ cutoff_dataset_creator_m <- function(mgauge) {
       }
     }
 
-    # If not any rain gauge accomplish the requirements, stop the function
+    # If not any rain gauge accomplish the requirements, assign NA and next! :)
     if (is.null(selected_raingauges)) {
       month_ratios_db[[raingauge_code]] <- list(cm = rep(1,12),
                                                 rm = rep(1,12),
@@ -367,7 +375,9 @@ cutoff_dataset_creator_m <- function(mgauge) {
 
     senamhi_gauge_selected_final <- senamhi_gauge_selected[selected_raingauges, ]
     cor_station_code <- senamhi_gauge_selected_final$V_COD_ESTA
+
     # Calculating Cm
+    # Cm -> Monthly mean value for an specific rain gauge.
     vector <- sprintf("%02d", 1:12)
     cm_data <- NULL
     for (index in vector) {
@@ -376,7 +386,9 @@ cutoff_dataset_creator_m <- function(mgauge) {
       ] %>% as.numeric() %>% mean(na.rm=TRUE)
       cm_data <- append(cm_data, month_data)
     }
+
     # Calculating Rm
+    # Rm -> Monthly mean value for the group of station of a specific rain gauge.
     senamhi_gauge_selected_final[-1] %>%
       as.data.frame() %>%
       as_tibble() %>% apply(2, function(x) mean(x, na.rm = TRUE)) ->
@@ -602,22 +614,252 @@ qm_dataset_creator <- function(path) {
   save(qm_list, file = gauge_data)
 }
 
-run_PISCOp <- function(path, month = "1981-01-01") {
+run_cutoff_m <- function(pp_values, cutoff_ratios) {
+  # 1. Load date and values
+  date <- as.Date(names(pp_values), format = "date_%Y%m%d")
+  values <- pp_values[[1]]
 
+  # 2. Load CUTOFF metadata
+  monthly_cutoff <- cutoff_ratios$cutoff_monthly
+  rain_gauges_code <- names(monthly_cutoff)
+
+  # 3. Trying to complete the data if it is possible
+  monthx <- lubridate::month(date)
+  new_values <- rep(NA, length(values))
+  for (index in seq_along(values)) {
+    val <- values[index]
+    # This rain gauge have a group of rain gauges (>10 years & cor>0.8),
+    # if not return the same value.
+    if(any(is.na(monthly_cutoff[[index]][["raingauges"]]))) {
+      new_value <- val
+    } else {
+      if (is.na(val)) {
+        cutoff_group <- monthly_cutoff[[rain_gauges_code[index]]]
+        group_position <- which(rain_gauges_code %in% cutoff_group$raingauges)
+        R <- values[group_position] %>% mean(na.rm = TRUE)
+        # na_position <- group_position[values[group_position] %>% is.na ]
+        R_m <- monthly_cutoff[[index]][["rm"]][monthx]
+        C_m <- monthly_cutoff[[index]][["cm"]][monthx]
+        new_value <- R*C_m/R_m
+      } else {
+        new_value <- val
+      }
+    }
+    new_values[[index]] <- new_value
+  }
+  new_values
+}
+
+#' qmap_get: BIAS CORRECTED CHIRP
+#' - sat: CHIRP time series.
+#' - model: Qmap bias model
+qmap_get_m <- function(sat, model) {
+  qmap::doQmapQUANT(sat, model, type="tricub") %>% as.numeric() %>% round(., 2)
+}
+
+run_qm_model <- function(pp_values, sat_values, qm_list) {
+  values <- pp_values[[1]]
+  missing_data <- which(is.na(values))
+  for (index in missing_data) {
+    values[index] <- suppressWarnings(
+      qmap_get_m(sat_values[index], qm_list[[index]])
+    )
+  }
+  values
+}
+
+run_PISCOp_m <- function(path, month = "1981-01-01") {
   # Wrangling dates
   month <- as.Date(month)
-  days <- paste0(
-    format(month, "%Y-%m-"),
-    month %>% days_in_month() %>% seq_len() %>% sprintf("%02d", .) # number of days
-  ) %>% as.Date()
+  # days <- paste0(
+  #   format(month, "%Y-%m-"),
+  #   month %>% days_in_month() %>% seq_len() %>% sprintf("%02d", .) # number of days
+  # ) %>% as.Date()
 
   # 1. Download satellite images
   chirpx_m <- download_CHIRPm(date = month, path = path)
-  chirpx_d <- lapply(days[1:4], download_CHIRPd) %>% stack()
-
+  #chirpx_m <- raster("/home/csaybar/data/CHIRP_0.05/CHIRPm/CHIRP.1981.01.tif")
+  # chirpx_d <- mapply(download_CHIRPd, days, MoreArgs = list(path = path)) %>%
+  #   stack()
 
   # 2. Complete rain gauge
+  load(sprintf("%s/data/senamhi_gauge_data.RData", path))
+  load(sprintf("%s/data/senamhi_cutoff_ratios.RData", path))
+  load(sprintf("%s/data/qm_models.RData", path))
+  rg_data_brute <- rg_data
+  rg_data <- data_list$monthly[format(month, "date_%Y%m%d")]
+  message(sprintf("Number of NA in Brute data: %s", sum(is.na(rg_data$date_19810101))))
 
-  # 3. Interpolation
+  # 3. Run Monthly CUTOFF
+  test_number_rg(rg_data)
+  rg_data[[1]] <- run_cutoff_m(pp_values = rg_data, cutoff_ratios = cutoff_ratios)
+  rg_data[[1]][is.nan(rg_data[[1]])] <- NA
+  message(sprintf("Number of NA after CUTOFF: %s", sum(is.na(rg_data$date_19810101))))
 
+  # 4. Run Monthly Qm
+  sat_data <- raster::extract(chirpx_m, rg_data)
+  rg_data[[1]] <- run_qm_model(
+    pp_values = rg_data,
+    sat_values = sat_data,
+    qm_list = qm_list$qm_monthly
+  )
+  message(sprintf("Number of NA after Qm: %s", sum(is.na(rg_data$date_19810101))))
+
+  # 5. CHIRPM
+  chirpm_m <- suppressMessages(
+    create_chirm_m(chirp_m = chirpx_m, path = path, month = month)
+  )
+  writeRaster(
+    x = chirpm_m,
+    filename = sprintf(
+      "%s/data/CHIRPM/CHIRPm/CHIRPMm.%s.tif", path, format(month, "%Y.%m.%d")
+    ),
+    overwrite = TRUE
+  )
+
+  # 6. Mean double station
+  rg_data_ds <- suppressWarnings(
+    mean_double_Station(gauge = rg_data, sat = chirpm_m, longlat = TRUE)
+  )
+
+  # 7. Interpolation
+  CHIRPMm_log <- log1p(chirpm_m)
+  names(CHIRPMm_log) <- "sat"
+  names(rg_data_ds) <- "gauge"
+  rg_data_ds$gauge <- log1p(rg_data_ds$gauge)
+  kd <- ROK(gauge = rg_data_ds, cov = CHIRPMm_log)
+  kd <- expm1(kd)
+  if(sum(getValues(kd) > 10000, na.rm = TRUE) > 0) {
+    kd <- RIDW(
+      gauge = rg_data_ds,
+      cov = CHIRPMm_log,
+      formula = "gauge~sat"
+    )
+    kd <- expm1(kd)
+  }
+
+  # Stats for PISCOp model
+  pbias_p <- hydroGOF::pbias(
+    sim = raster::extract(kd, rg_data_brute),
+    obs = rg_data_brute[[1]]
+  )
+  cor_p <- cor(
+    x = raster::extract(kd, rg_data_brute),
+    y = rg_data_brute$date_19810101,
+    use = "pairwise.complete.obs"
+  )
+  message(sprintf("PBIAS: %s && PEARSON: %s", pbias_p, round(cor_p,2)))
+  kd[kd < 0] = 0
+  writeRaster(
+    x = kd,
+    filename = sprintf(
+      "%s/data/CHIRPM/CHIRPm/PISCOpm.%s.tif", path, format(month, "%Y.%m.%d")
+    ),
+    overwrite = TRUE
+  )
+}
+
+test_number_rg <- function(pp_values) {
+  if (length(pp_values) != 447 ) {
+    stop(
+      "PISCOp v2.2 needs to have specifically 447 rain gauges.",
+      "If you are interested in a new version with more rain gauges",
+      "run main_creator.R an follow the instructions."
+    )
+  }
+}
+
+piscop_base <- function() {
+  piscop_extend <- raster::extent(-81.3, -68, -18.8, 1)
+  piscop_base_p <- raster(piscop_extend, nrows=198, ncols=133)
+  crs(piscop_base_p) <- "+proj=longlat +datum=WGS84 +no_defs"
+  piscop_base_p[] <- seq_len(ncell(piscop_base_p))
+  piscop_base_p
+}
+
+resampleR <- function (R1 = NULL, R2 = NULL, t_res = NULL, t_ext = NULL, r = "cubicspline") {
+  Rb <- R1
+  if(inMemory(R1)){
+    nameR1 <- sprintf("%s/%s.tif",getwd(),names(R1))
+    R1 <- writeRaster(R1,nameR1,overwrite=T)
+  }
+  if (!missing(R2)) {
+    t1 <- c(xmin(R2), ymin(R2), xmax(R2), ymax(R2))
+    t2 <- c(res(R2)[1], res(R2)[2])
+  } else {
+    t1 <-  t_ext
+    t2 <-  t_res
+  }
+
+  Routput2 <- sprintf("%s/R_%s.tif",getwd(),names(R1))
+  Rf <- gdalUtils::gdalwarp(srcfile = R1@file@name, dstfile = Routput2,
+                 tr = t2, te = t1, output_Raster = T, overwrite = T,
+                 verbose = T,r=r) * 1
+
+  file.remove(Routput2)
+  if (inMemory(Rb)) file.remove(nameR1)
+  Rf
+}
+
+create_chirm_m <- function(chirp_m, path, month) {
+  # 1. Global params
+  e_lumb <- 0.5
+  l_month <- lubridate::month(month)
+  piscopb <- piscop_base()
+
+  # 2. From 0.05 to 0.1
+  chirpx_R <- resampleR(R1 = chirp_m, R2 = piscopb)*1
+
+  # 3. Read PISCOp_clim and CHIRPMm
+  pisco_clim <- list.files(
+    path = sprintf('%s/data/PISCOpclim', path),
+    full.names = TRUE
+  )[l_month] %>% raster::raster()
+  chp_clim <- list.files(
+    path = sprintf('%s/data/CHPclim', path),
+    full.names = TRUE
+  )[l_month] %>% raster::raster()
+
+  # 4. Create CHIRPMm
+  CHIRPMm <- chirpx_R * ((pisco_clim + e_lumb)/(chp_clim + e_lumb))
+  CHIRPMm[CHIRPMm < 0] = 0
+  CHIRPMm
+}
+
+mean_double_Station <- function(gauge = NULL, sat = NULL, longlat = TRUE) {
+  # I deeply apologize for this script I made it 3 years ago :'v
+
+  # 1.  Convert raster to points
+  projection(sat) <- projection(gauge)
+  point <- data.frame(rasterToPoints(sat))
+  colnames(point) <- c("x", "y", "sat")
+  coordinates(point) <- ~x + y
+  projection(point) <- projection(sat)
+
+  # 2. Distance from rain gauges to sat points
+  distances <- function(x, ptsat = point){
+    which.min(spDists(ptsat, gauge[x, ], longlat = T))
+  }
+  loc <- do.call("c", lapply(1:length(gauge), distances))
+  duplicates <- loc[which(duplicated(loc))]
+
+  # gauge (sp) to data.frame (gauge2p)
+  gauge2 <- cbind(coordinates(gauge), gauge@data)
+  colnames(gauge2) <- c("x", "y", colnames(gauge2)[3:length(gauge2)])
+  gauge2p <- gauge2
+
+  list <- lapply(1:length(duplicates), function(i) {
+    dupliStation <- which(loc == duplicates[i])
+    gaugeD <- gauge2p[dupliStation, ]
+    PromStation <- colMeans(gaugeD, na.rm = T)
+    list(Prom = PromStation, position = dupliStation)
+  })
+
+  stat <- do.call("rbind", lapply(1:length(duplicates), function(x) list[[x]]$position))
+  stat2 <- do.call("rbind", lapply(1:length(duplicates), function(x) list[[x]]$Prom))
+  gauge2p[stat[, 1], ] <- stat2
+  newG <- gauge2p[-stat[, 2], ]
+  coordinates(newG) <- ~x + y
+  projection(newG) <- projection(sat)
+  return(newG)
 }
