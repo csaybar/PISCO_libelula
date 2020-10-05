@@ -668,33 +668,25 @@ run_qm_model <- function(pp_values, sat_values, qm_list) {
   values
 }
 
-run_PISCOp_m <- function(path, month = "1981-01-01") {
+run_PISCOp_m <- function(path, sp_data) {
   # Wrangling dates
-  month <- as.Date(month)
-  # days <- paste0(
-  #   format(month, "%Y-%m-"),
-  #   month %>% days_in_month() %>% seq_len() %>% sprintf("%02d", .) # number of days
-  # ) %>% as.Date()
+  month <- as.Date(names(sp_data[2]), format = "date_%Y%m%d")
 
   # 1. Download satellite images
   chirpx_m <- download_CHIRPm(date = month, path = path)
-  #chirpx_m <- raster("/home/csaybar/data/CHIRP_0.05/CHIRPm/CHIRP.1981.01.tif")
-  # chirpx_d <- mapply(download_CHIRPd, days, MoreArgs = list(path = path)) %>%
-  #   stack()
 
   # 2. Complete rain gauge
-  load(sprintf("%s/data/senamhi_gauge_data.RData", path))
   load(sprintf("%s/data/senamhi_cutoff_ratios.RData", path))
   load(sprintf("%s/data/qm_models.RData", path))
-  rg_data_brute <- rg_data
-  rg_data <- data_list$monthly[format(month, "date_%Y%m%d")]
-  message(sprintf("Number of NA in Brute data: %s", sum(is.na(rg_data$date_19810101))))
+  rg_data_brute <- sp_data[2]
+  rg_data <- rg_data_brute
+  message(sprintf("Number of NA in Brute data: %s", sum(is.na(rg_data[[1]]))))
 
   # 3. Run Monthly CUTOFF
   test_number_rg(rg_data)
   rg_data[[1]] <- run_cutoff_m(pp_values = rg_data, cutoff_ratios = cutoff_ratios)
   rg_data[[1]][is.nan(rg_data[[1]])] <- NA
-  message(sprintf("Number of NA after CUTOFF: %s", sum(is.na(rg_data$date_19810101))))
+  message(sprintf("Number of NA after CUTOFF: %s", sum(is.na(rg_data[[1]]))))
 
   # 4. Run Monthly Qm
   sat_data <- raster::extract(chirpx_m, rg_data)
@@ -728,7 +720,6 @@ run_PISCOp_m <- function(path, month = "1981-01-01") {
   names(rg_data_ds) <- "gauge"
   rg_data_ds$gauge <- log1p(rg_data_ds$gauge)
   kd <- ROK(gauge = rg_data_ds, cov = CHIRPMm_log)
-  kd <- expm1(kd)
   if(sum(getValues(kd) > 10000, na.rm = TRUE) > 0) {
     kd <- RIDW(
       gauge = rg_data_ds,
@@ -745,7 +736,7 @@ run_PISCOp_m <- function(path, month = "1981-01-01") {
   )
   cor_p <- cor(
     x = raster::extract(kd, rg_data_brute),
-    y = rg_data_brute$date_19810101,
+    y = rg_data_brute[[1]],
     use = "pairwise.complete.obs"
   )
   message(sprintf("PBIAS: %s && PEARSON: %s", pbias_p, round(cor_p,2)))
@@ -862,4 +853,413 @@ mean_double_Station <- function(gauge = NULL, sat = NULL, longlat = TRUE) {
   coordinates(newG) <- ~x + y
   projection(newG) <- projection(sat)
   return(newG)
+}
+
+
+create_spatial_dataset <- function(path, month) {
+  days_base <-   days <- paste0(
+    format(month, "%Y-%m-"),
+    month %>% days_in_month() %>% seq_len() %>% sprintf("%02d", .) # number of days
+  ) %>% as.Date() %>% format("date_%Y%m%d")
+  month_base <- format(as.Date(month), "date_%Y%m%d")
+
+  # Searching .csv dataset
+  message("Searching metadata, day_data and month_data dataset ...")
+  month_data <- sprintf("%s/data/month_data.csv", path)
+  day_data <- sprintf("%s/data/day_data.csv", path)
+  metadata <- sprintf("%s/data/metadata.csv", path)
+  if (!(file.exists(month_data) & file.exists(metadata) & file.exists(day_data))) {
+    if (!file.exists(month_data)) {
+      message(month_data, " doesn't found.")
+    }
+    if (!file.exists(day_data)) {
+      message(day_data, " doesn't found.")
+    }
+    if (!file.exists(metadata)) {
+      message(metadata, " doesn't found.")
+    }
+    stop("PISCOp needs monthly and daily  data and metadata in csv format")
+  }
+  day_data_csv <- read.csv(day_data, stringsAsFactors = FALSE)
+  day_dates <- sprintf("date_%s", format(as.Date(day_data_csv[[1]]), "%Y%m%d"))
+
+  month_data_csv <- read.csv(month_data, stringsAsFactors = FALSE)
+  month_dates <- sprintf("date_%s", format(as.Date(month_data_csv[[1]]), "%Y%m%d"))
+
+  day_data_csv_selected <- day_data_csv[which(day_dates %in% days_base), ]
+  month_data_csv_selected <- month_data_csv[which(month_dates %in% month_base), ]
+
+  metadata_csv <- read.csv(metadata, stringsAsFactors = FALSE) %>%
+    '['(c("V_COD_ESTA", "Y_LONGITUD", "X_LATITUD"))
+
+  # Load Monthly data
+  for (index in seq_along(colnames(month_data_csv_selected)[-1])) {
+    if(colnames(month_data_csv_selected[index + 1]) == sprintf("X%s",metadata_csv[index,1])) {
+      coordinates <- st_point(as.numeric(metadata_csv[index,2:3]))
+      dates_col <- month_data_csv_selected[[index + 1]] %>%
+        matrix(nrow = 1) %>%
+        data.frame() %>%
+        `colnames<-`(month_base)
+      cod_station <- data.frame(V_COD_ESTA = metadata_csv[index,1])
+      final_dataset <- cbind(cod_station, dates_col)
+      final_dataset_sf <- st_sf(final_dataset, geom = st_sfc(coordinates))
+      st_crs(final_dataset_sf) <- 4326
+
+      if (index == 1) {
+        monthly_dataset <- final_dataset_sf
+      } else {
+        monthly_dataset[index,] <- final_dataset_sf
+      }
+    } else {
+      stop("Code station are not the same!")
+    }
+  }
+
+  # Load Daily data
+  for (index in seq_along(colnames(day_data_csv_selected)[-1])) {
+    # test if column in monthly_data and row in metadata are the same
+    if(colnames(day_data_csv_selected[index + 1]) == sprintf("X%s",metadata_csv[index,1])) {
+      coordinates <- st_point(as.numeric(metadata_csv[index,2:3]))
+      dates_col <- day_data_csv_selected[[index + 1]] %>%
+        matrix(nrow = 1) %>%
+        data.frame() %>%
+        `colnames<-`(days_base)
+      cod_station <- data.frame(V_COD_ESTA = metadata_csv[index,1])
+      final_dataset <- cbind(cod_station, dates_col)
+      final_dataset_sf <- st_sf(final_dataset, geom = st_sfc(coordinates))
+      st_crs(final_dataset_sf) <- 4326
+      if (index == 1) {
+        daily_dataset <- final_dataset_sf
+      } else {
+        daily_dataset[index,] <- final_dataset_sf
+      }
+    } else {
+      stop("Code station are not the same!")
+    }
+  }
+  list(
+    daily = as(daily_dataset, "Spatial"),
+    monthly = as(monthly_dataset, "Spatial")
+  )
+}
+
+
+ROK <- function (gauge, cov, formula, model, crossval = F,nfold, ...) {
+  projection(cov) <- projection(gauge)
+  sav_name <- names(gauge)
+  names(gauge) <- "gauge"
+  sat_cor <- raster::extract(cov,gauge) #extraido del sat
+  sat_cor[is.na(sat_cor)] = 0
+  dTF <- data.frame(obs=gauge$gauge,sat=sat_cor) #creo el df
+  #llm<-lm(obs~sat,dTF) # construyo el modelo lineal global
+  gauge$diff <- round(dTF$obs-dTF$sat,1)
+  fv <- FitVariogram(diff~1,gauge,fix.values = c(0,NA,NA)) #cov_lm <- cov*llm$coefficients[2]+llm$coefficients[1] #corrigo el sat
+  cov_lm <- cov
+  kd <- krige(diff~1,gauge,rasterToPoints(cov_lm,sp=T),model=fv$var_model)
+  rF<-kd[1]
+  gridded(rF)=T
+  rFF <- raster(rF) + cov_lm
+  rFF <- expm1(rFF)
+  rFF[rFF<0]=0
+  # PISCO_valu <- raster::extract(rFF,gauge)
+  # nwdf<-data.frame(obs=expm1(gauge$gauge),sim=PISCO_valu)
+  # coeficients<-lm(obs~sim,nwdf)$coefficients
+  # PISCO_climatology <- rFF*coeficients[2]+coeficients[1]
+  # names(PISCO_climatology) <- sav_name
+  # PISCO_climatology2<-resampleR(,base,r="near")
+  # PISCO_climatology2
+  rFF
+}
+
+FitVariogram <- function (formula, input_data, model = c("Sph", "Exp", "Gau",
+                                                         "Ste"), kappa = c(0.05, seq(0.2, 2, 0.1), 5, 10), fix.values = c(NA,
+                                                                                                                          NA, NA), verbose = FALSE, GLS.model = NA, start_vals = c(NA,
+                                                                                                                                                                                   NA, NA), miscFitOptions = list(), boundaries, ...)
+{
+  if ("alpha" %in% names(list(...)))
+    warning("Anisotropic variogram model fitting not supported, see the documentation of autofitVariogram for more details.")
+  miscFitOptionsDefaults = list(merge.small.bins = TRUE, min.np.bin = 5)
+  miscFitOptions = modifyList(miscFitOptionsDefaults, miscFitOptions)
+  longlat = !is.projected(input_data)
+  if (is.na(longlat))
+    longlat = FALSE
+  diagonal = spDists(t(bbox(input_data)), longlat = longlat)[1,
+                                                             2]
+  if (!missing(boundaries))
+    boundaries = boundaries
+  else {
+    boundaries = c(2, 4, 6, 9, 12, 15, 25, 35, 50, 65, 80,
+                   100) * diagonal * 0.35/100
+  }
+  if (!is(GLS.model, "variogramModel")) {
+    experimental_variogram = variogram(formula, input_data,
+                                       boundaries = boundaries, ...)
+  }
+  else {
+    if (verbose)
+      cat("Calculating GLS sample variogram\n")
+    g = gstat(NULL, "bla", formula, input_data, model = GLS.model,
+              set = list(gls = 1))
+    experimental_variogram = variogram(g, boundaries = boundaries,
+                                       ...)
+  }
+  if (miscFitOptions[["merge.small.bins"]]) {
+    if (verbose)
+      cat("Checking if any bins have less than 5 points, merging bins when necessary...\n\n")
+    while (TRUE) {
+      if (length(experimental_variogram$np[experimental_variogram$np <
+                                           miscFitOptions[["min.np.bin"]]]) == 0 | length(boundaries) ==
+          1)
+        break
+      boundaries = boundaries[2:length(boundaries)]
+      if (!is(GLS.model, "variogramModel")) {
+        experimental_variogram = variogram(formula,
+                                           input_data, boundaries = boundaries, ...)
+      }
+      else {
+        experimental_variogram = variogram(g, boundaries = boundaries,
+                                           ...)
+      }
+    }
+  }
+  if (is.na(start_vals[1])) {
+    initial_nugget = min(experimental_variogram$gamma)
+  }
+  else {
+    initial_nugget = start_vals[1]
+  }
+  if (is.na(start_vals[2])) {
+    initial_range = 0.1 * diagonal
+  }
+  else {
+    initial_range = start_vals[2]
+  }
+  if (is.na(start_vals[3])) {
+    initial_sill = mean(c(max(experimental_variogram$gamma),
+                          median(experimental_variogram$gamma)))
+  }
+  else {
+    initial_sill = start_vals[3]
+  }
+  if (!is.na(fix.values[1])) {
+    fit_nugget = FALSE
+    initial_nugget = fix.values[1]
+  }
+  else fit_nugget = TRUE
+  if (!is.na(fix.values[2])) {
+    fit_range = FALSE
+    initial_range = fix.values[2]
+  }
+  else fit_range = TRUE
+  if (!is.na(fix.values[3])) {
+    fit_sill = FALSE
+    initial_sill = fix.values[3]
+  }
+  else fit_sill = TRUE
+  getModel = function(psill, model, range, kappa, nugget,
+                      fit_range, fit_sill, fit_nugget, verbose) {
+    if (verbose)
+      debug.level = 1
+    else debug.level = 0
+    if (model == "Pow") {
+      warning("Using the power model is at your own risk, read the docs of autofitVariogram for more details.")
+      if (is.na(start_vals[1]))
+        nugget = 0
+      if (is.na(start_vals[2]))
+        range = 1
+      if (is.na(start_vals[3]))
+        sill = 1
+    }
+    obj = try(fit.variogram(experimental_variogram, model = vgm(psill = psill,
+                                                                model = model, range = range, nugget = nugget, kappa = kappa),
+                            fit.ranges = c(fit_range), fit.sills = c(fit_nugget,
+                                                                     fit_sill), debug.level = 0), TRUE)
+    if ("try-error" %in% class(obj)) {
+      warning("An error has occured during variogram fitting. Used:\n",
+              "\tnugget:\t", nugget, "\n\tmodel:\t", model,
+              "\n\tpsill:\t", psill, "\n\trange:\t", range,
+              "\n\tkappa:\t", ifelse(kappa == 0, NA, kappa),
+              "\n  as initial guess. This particular variogram fit is not taken into account. \nGstat error:\n",
+              obj)
+      return(NULL)
+    }
+    else return(obj)
+  }
+  test_models = model
+  SSerr_list = c()
+  vgm_list = list()
+  counter = 1
+  for (m in test_models) {
+    if (m != "Mat" && m != "Ste") {
+      model_fit = getModel(initial_sill - initial_nugget,
+                           m, initial_range, kappa = 0, initial_nugget,
+                           fit_range, fit_sill, fit_nugget, verbose = verbose)
+      if (!is.null(model_fit)) {
+        vgm_list[[counter]] = model_fit
+        SSerr_list = c(SSerr_list, attr(model_fit, "SSErr"))
+      }
+      counter = counter + 1
+    }
+    else {
+      for (k in kappa) {
+        model_fit = getModel(initial_sill - initial_nugget,
+                             m, initial_range, k, initial_nugget, fit_range,
+                             fit_sill, fit_nugget, verbose = verbose)
+        if (!is.null(model_fit)) {
+          vgm_list[[counter]] = model_fit
+          SSerr_list = c(SSerr_list, attr(model_fit,
+                                          "SSErr"))
+        }
+        counter = counter + 1
+      }
+    }
+  }
+  strange_entries = sapply(vgm_list, function(v) any(c(v$psill,
+                                                       v$range) < 0) | is.null(v))
+  if (any(strange_entries)) {
+    if (verbose) {
+      print(vgm_list[strange_entries])
+      cat("^^^ ABOVE MODELS WERE REMOVED ^^^\n\n")
+    }
+    warning("Some models where removed for being either NULL or having a negative sill/range/nugget, \n\tset verbose == TRUE for more information")
+    SSerr_list = SSerr_list[!strange_entries]
+    vgm_list = vgm_list[!strange_entries]
+  }
+  if (verbose) {
+    cat("Selected:\n")
+    print(vgm_list[[which.min(SSerr_list)]])
+    cat("\nTested models, best first:\n")
+    tested = data.frame(`Tested models` = sapply(vgm_list,
+                                                 function(x) as.character(x[2, 1])), kappa = sapply(vgm_list,
+                                                                                                    function(x) as.character(x[2, 4])), SSerror = SSerr_list)
+    tested = tested[order(tested$SSerror), ]
+    print(tested)
+  }
+  result = list(exp_var = experimental_variogram, var_model = vgm_list[[which.min(SSerr_list)]],
+                sserr = min(SSerr_list))
+  class(result) = c("autofitVariogram", "list")
+  return(result)
+}
+
+var_fit <- function (gauge, cov, formula, ...){
+  ext <- raster::extract(cov, gauge, cellnumber = F, sp = T)
+  ext2<-data.frame(coordinates(ext),ext@data) %>% na.omit
+  coordinates(ext2)<-~x+y
+  projection(ext2)<-projection(gauge)
+  list(ftvariogram = FitVariogram(formula, ext2, ...), ext = ext2)
+}
+
+RIDW <- function (gauge, cov, formula, idpR = seq(0.8, 3.5, 0.1), ...) {
+  sav_name <- names(gauge)
+  ext <- raster::extract(cov, gauge, cellnumber = F, sp = T)
+  gauge <- gauge[which(!is.na(ext$sat)),]
+  station <- gauge
+  linear <- na.omit(ext@data) %>% tbl_df %>% mutate_all(as.character) %>%
+    mutate_all(as.numeric)
+  #llm <- lm(formula, linear)
+  #if(anyNA(coefficients(llm))){
+  station$residuals <- linear[[1]]-linear[[2]]
+  #} else {station$residuals <- llm$residuals}
+  point <- rasterToPoints(cov) %>% data.frame
+  coordinates(point) <- ~x + y
+  projection(point) <- projection(cov)
+  idpRange <- idpR
+  mse <- rep(NA, length(idpRange))
+  for (i in 1:length(idpRange)) {
+    mse[i] <- mean(krige.cv(residuals ~ 1, station, nfold = 10,
+                            set = list(idp = idpRange[i]), verbose = F, ...)$residual^2)
+  }
+  poss <- which(mse %in% min(mse))
+  bestparam <- idpRange[poss]
+  # residual.best <- krige.cv(residuals ~ 1, station, nfold = nrow(station),
+  #                           set = list(idp = idpRange[poss]), verbose = F, ...)$residual
+  idwError <- idw(residuals ~ 1, station, point, idp = bestparam)
+  idwError <- idwError["var1.pred"]
+  gridded(idwError) <- TRUE
+  mapa <- raster(idwError)
+  Ridw <- mapa+cov
+  Ridw
+}
+
+run_PISCOp_d <- function(path, sp_data) {
+  # Wrangling dates
+  days <- as.Date(names(sp_data[-1]), format = "date_%Y%m%d")
+
+  # 1. Download satellite images
+  chirpx_d <- mapply(download_CHIRPd, days, MoreArgs = list(path = path)) %>%
+    stack()
+
+  # 2. Complete rain gauge
+  load(sprintf("%s/data/senamhi_cutoff_ratios.RData", path))
+  load(sprintf("%s/data/qm_models.RData", path))
+  rg_data_brute <- sp_data[-1]
+  rg_data <- rg_data_brute
+  message(sprintf("Number of NA in Brute data: %s", sum(is.na(rg_data@data))))
+
+  # 3. Run Monthly CUTOFF
+  test_number_rg(rg_data)
+  rg_data@data <- run_cutoff_d(pp_values = rg_data, cutoff_ratios = cutoff_ratios)
+  message(sprintf("Number of NA after CUTOFF: %s", sum(is.na(rg_data@data))))
+
+  # 4. Run Monthly Qm
+  sat_data <- raster::extract(chirpx_d, rg_data)
+  rg_data[[1]] <- run_qm_model(
+    pp_values = rg_data,
+    sat_values = sat_data,
+    qm_list = qm_list$qm_monthly
+  )
+  message(sprintf("Number of NA after Qm: %s", sum(is.na(rg_data$date_19810101))))
+
+  # 5. CHIRPM
+  chirpm_m <- suppressMessages(
+    create_chirm_m(chirp_m = chirpx_m, path = path, month = month)
+  )
+  writeRaster(
+    x = chirpm_m,
+    filename = sprintf(
+      "%s/data/CHIRPM/CHIRPm/CHIRPMm.%s.tif", path, format(month, "%Y.%m.%d")
+    ),
+    overwrite = TRUE
+  )
+
+  # 6. Mean double station
+  rg_data_ds <- suppressWarnings(
+    mean_double_Station(gauge = rg_data, sat = chirpm_m, longlat = TRUE)
+  )
+
+  # 7. Interpolation
+  CHIRPMm_log <- log1p(chirpm_m)
+  names(CHIRPMm_log) <- "sat"
+  names(rg_data_ds) <- "gauge"
+  rg_data_ds$gauge <- log1p(rg_data_ds$gauge)
+  kd <- ROK(gauge = rg_data_ds, cov = CHIRPMm_log)
+  kd <- expm1(kd)
+  if(sum(getValues(kd) > 10000, na.rm = TRUE) > 0) {
+    kd <- RIDW(
+      gauge = rg_data_ds,
+      cov = CHIRPMm_log,
+      formula = "gauge~sat"
+    )
+    kd <- expm1(kd)
+  }
+
+  # Stats for PISCOp model
+  pbias_p <- hydroGOF::pbias(
+    sim = raster::extract(kd, rg_data_brute),
+    obs = rg_data_brute[[1]]
+  )
+  cor_p <- cor(
+    x = raster::extract(kd, rg_data_brute),
+    y = rg_data_brute$date_19810101,
+    use = "pairwise.complete.obs"
+  )
+  message(sprintf("PBIAS: %s && PEARSON: %s", pbias_p, round(cor_p,2)))
+  kd[kd < 0] = 0
+  writeRaster(
+    x = kd,
+    filename = sprintf(
+      "%s/data/CHIRPM/CHIRPm/PISCOpm.%s.tif", path, format(month, "%Y.%m.%d")
+    ),
+    overwrite = TRUE
+  )
 }
