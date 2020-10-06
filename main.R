@@ -17,7 +17,7 @@ options(max.print=1000)
 
 # Global Parameters -------------------------------------------------------
 path <- "/home/csaybar/"
-month <- as.Date("2013-10-01")
+month <- as.Date("2015-10-01")
 create_folders(path)
 
 # Global Parameters -------------------------------------------------------

@@ -698,15 +698,8 @@ run_PISCOp_m <- function(path, sp_data) {
   message(sprintf("Number of NA after Qm: %s", sum(is.na(rg_data$date_19810101))))
 
   # 5. CHIRPM
-  chirpm_m <- suppressMessages(
-    create_chirm_m(chirp_m = chirpx_m, path = path, month = month)
-  )
-  writeRaster(
-    x = chirpm_m,
-    filename = sprintf(
-      "%s/data/CHIRPM/CHIRPm/CHIRPMm.%s.tif", path, format(month, "%Y.%m.%d")
-    ),
-    overwrite = TRUE
+  chirpm_d <- suppressMessages(
+    create_chirm_d(chirp_d = chirpx_d, days = days, path = path)
   )
 
   # 6. Mean double station
@@ -1203,63 +1196,123 @@ run_PISCOp_d <- function(path, sp_data) {
 
   # 4. Run Monthly Qm
   sat_data <- raster::extract(chirpx_d, rg_data)
-  rg_data[[1]] <- run_qm_model(
-    pp_values = rg_data,
-    sat_values = sat_data,
-    qm_list = qm_list$qm_monthly
-  )
-  message(sprintf("Number of NA after Qm: %s", sum(is.na(rg_data$date_19810101))))
+  for (qm_index in seq_along(days)) {
+    rg_data[[qm_index]] <- run_qm_model(
+      pp_values = rg_data[qm_index],
+      sat_values = sat_data[,qm_index],
+      qm_list = qm_list$qm_daily
+    )
+  }
+  message(sprintf("Number of NA after Qm: %s", sum(is.na(rg_data@data))))
 
   # 5. CHIRPM
-  chirpm_m <- suppressMessages(
-    create_chirm_m(chirp_m = chirpx_m, path = path, month = month)
-  )
-  writeRaster(
-    x = chirpm_m,
-    filename = sprintf(
-      "%s/data/CHIRPM/CHIRPm/CHIRPMm.%s.tif", path, format(month, "%Y.%m.%d")
-    ),
-    overwrite = TRUE
+  chirpm_d <- suppressMessages(
+    create_chirm_d(chirp_d = chirpx_d, days = days, path = path)
   )
 
-  # 6. Mean double station
+  |# 6. Mean double station
   rg_data_ds <- suppressWarnings(
-    mean_double_Station(gauge = rg_data, sat = chirpm_m, longlat = TRUE)
+    mean_double_Station(gauge = rg_data, sat = chirpm_m[[1]], longlat = TRUE)
   )
 
   # 7. Interpolation
-  CHIRPMm_log <- log1p(chirpm_m)
-  names(CHIRPMm_log) <- "sat"
-  names(rg_data_ds) <- "gauge"
-  rg_data_ds$gauge <- log1p(rg_data_ds$gauge)
-  kd <- ROK(gauge = rg_data_ds, cov = CHIRPMm_log)
-  kd <- expm1(kd)
-  if(sum(getValues(kd) > 10000, na.rm = TRUE) > 0) {
+  for (index_intp in seq_along(days)) {
+    CHIRPMd_p <- chirpm_d[[index_intp]]
+    rg_data_p <- rg_data_ds[index_intp]
+    names(CHIRPMd_p) <- "sat"
+    names(rg_data_p) <- "gauge"
     kd <- RIDW(
-      gauge = rg_data_ds,
-      cov = CHIRPMm_log,
+      gauge = rg_data_p,
+      cov = CHIRPMd_p,
       formula = "gauge~sat"
     )
-    kd <- expm1(kd)
+    kd[kd<0]=0
+    writeRaster(
+      x = kd,
+      filename = sprintf(
+        "%s/data/PISCOp/PISCOpd/PISCOpd.%s.tif", path, format(days[index_intp], "%Y.%m.%d")
+      ),
+      overwrite = TRUE
+    )
   }
-
-  # Stats for PISCOp model
-  pbias_p <- hydroGOF::pbias(
-    sim = raster::extract(kd, rg_data_brute),
-    obs = rg_data_brute[[1]]
-  )
-  cor_p <- cor(
-    x = raster::extract(kd, rg_data_brute),
-    y = rg_data_brute$date_19810101,
-    use = "pairwise.complete.obs"
-  )
-  message(sprintf("PBIAS: %s && PEARSON: %s", pbias_p, round(cor_p,2)))
-  kd[kd < 0] = 0
-  writeRaster(
-    x = kd,
-    filename = sprintf(
-      "%s/data/CHIRPM/CHIRPm/PISCOpm.%s.tif", path, format(month, "%Y.%m.%d")
-    ),
-    overwrite = TRUE
-  )
 }
+
+run_cutoff_d <- function(pp_values, cutoff_ratios) {
+  # 1. Load date and values
+  date <- as.Date(names(pp_values), format = "date_%Y%m%d")
+  cutoff_daily_df <- pp_values@data*NA
+
+  # 2. Load CUTOFF metadata
+  daily_cutoff <- cutoff_ratios$cutoff_daily
+  rain_gauges_code <- names(daily_cutoff)
+
+  # Loop passing for each date
+  for (index_date in seq_len(ncol(pp_values))) {
+    values <- pp_values[[index_date]]
+    # 3. Trying to complete the data if it is possible
+    monthx <- lubridate::month(date[1])
+    new_values <- rep(NA, length(values))
+    # Loop passing for each value
+    for (index in seq_along(values)) {
+      val <- values[index]
+      # This rain gauge have a group of rain gauges (>10 years & cor>0.8),
+      # if not return the same value.
+      if(any(is.na(daily_cutoff[[index]][["raingauges"]]))) {
+        new_value <- val
+      } else {
+        if (is.na(val)) {
+          cutoff_group <- daily_cutoff[[rain_gauges_code[index]]]
+          group_position <- which(rain_gauges_code %in% cutoff_group$raingauges)
+          R <- values[group_position] %>% mean(na.rm = TRUE)
+          # na_position <- group_position[values[group_position] %>% is.na ]
+          R_m <- daily_cutoff[[index]][["rm"]][monthx]
+          C_m <- daily_cutoff[[index]][["cm"]][monthx]
+          new_value <- R*C_m/R_m
+        } else {
+          new_value <- val
+        }
+      }
+      new_values[[index]] <- new_value
+    }
+    cutoff_daily_df[[index_date]] <- new_values
+  }
+  cutoff_daily_df
+}
+
+
+create_chirm_d <- function(chirp_d, days, path) {
+  # 1. Global params
+  e_lumb <- 0.5
+  l_month <- lubridate::month(days)[1]
+  piscopb <- piscop_base()
+
+  # 2. Read PISCOp_clim and CHIRPMm
+  pisco_clim <- list.files(
+    path = sprintf('%s/data/PISCOpclim', path),
+    full.names = TRUE
+  )[l_month] %>% raster::raster()
+  chp_clim <- list.files(
+    path = sprintf('%s/data/CHPclim', path),
+    full.names = TRUE
+  )[l_month] %>% raster::raster()
+
+  CHIRPMds <- list()
+  for (index in seq_along(days)) {
+    # 3. From 0.05 to 0.1
+    chirpx_R <- resampleR(R1 = chirp_d[[index]], R2 = piscopb)*1
+    # 4. Create CHIRPMm
+    CHIRPMd <- chirpx_R * ((pisco_clim + e_lumb)/(chp_clim + e_lumb))
+    CHIRPMd[CHIRPMd < 0] = 0
+    # 5. Save raster
+    writeRaster(
+      x = CHIRPMd,
+      filename = sprintf(
+        "%s/data/CHIRPM/CHIRPm/CHIRPMd.%s.tif", path, format(days[index], "%Y.%m.%d")
+      ),
+      overwrite = TRUE
+    )
+    CHIRPMds[[index]] <- CHIRPMd
+  }
+  stack(CHIRPMds)
+}
+
