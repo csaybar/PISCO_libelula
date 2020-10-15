@@ -19,8 +19,8 @@ create_folders <- function(path) {
   dir.create(sprintf('%s/data/', path), showWarnings = FALSE)
   # CHIRPM
   dir.create(sprintf('%s/data/CHIRPM/', path), showWarnings = FALSE)
-  dir.create(sprintf('%s/data/CHIRPM/CHIRPd/', path), showWarnings = FALSE)
-  dir.create(sprintf('%s/data/CHIRPM/CHIRPm/', path), showWarnings = FALSE)
+  dir.create(sprintf('%s/data/CHIRPM/CHIRPMd/', path), showWarnings = FALSE)
+  dir.create(sprintf('%s/data/CHIRPM/CHIRPMm/', path), showWarnings = FALSE)
 
   # CHIRP
   dir.create(sprintf('%s/data/CHIRP_0.05/', path), showWarnings = FALSE)
@@ -751,7 +751,13 @@ run_PISCOp_m <- function(path, sp_data) {
   chirpm_m <- suppressMessages(
     create_chirm_m(chirp_m = chirpx_m, month = month, path = path)
   )
-
+  writeRaster(
+    x = kd,
+    filename = sprintf(
+      "%s/data/CHIRPM/CHIRPMm/CHIRPMm.%s.tif", path, format(month, "%Y.%m.%d")
+    ),
+    overwrite = TRUE
+  )
   # 6. Mean double station
   rg_data_ds <- suppressWarnings(
     mean_double_Station(gauge = rg_data, sat = chirpm_m, longlat = TRUE)
@@ -1340,7 +1346,7 @@ create_chirm_d <- function(chirp_d, days, path) {
     writeRaster(
       x = CHIRPMd,
       filename = sprintf(
-        "%s/data/CHIRPM/CHIRPm/CHIRPMd.%s.tif", path, format(days[index], "%Y.%m.%d")
+        "%s/data/CHIRPM/CHIRPMd/CHIRPMd.%s.tif", path, format(days[index], "%Y.%m.%d")
       ),
       overwrite = TRUE
     )
