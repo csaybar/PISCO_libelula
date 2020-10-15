@@ -17,7 +17,7 @@ source("src/utils.R")
 options(max.print=1000)
 
 # 2. Global Parameters -------------------------------------------------------
-path <- "/home/csaybar/"
+path <- "/home/piscop/data/"
 month <- as.Date("2015-11-01")
 spatial_databases <- load_dataset(path) # gauge rain data
 create_folders(path)
