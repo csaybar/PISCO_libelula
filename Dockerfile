@@ -1,4 +1,4 @@
-FROM rocker/geospatial
+FROM rocker/geospatial:4.0.2
 MAINTAINER "Cesar Aybar" csaybar@gmail.com
 
 # set display port to avoid crash
@@ -10,6 +10,5 @@ RUN R -e "install.packages('RCurl')"
 RUN R -e "install.packages('hydroGOF')"
 
 # Add folders
-ADD  data /home/piscop/data
-ADD  src /home/piscop/src
-
+ADD data $HOME/data
+ADD src $HOME/src

@@ -1,4 +1,5 @@
 #' Create a complete dataset for PISCOp 2.2
+#
 
 # 1. Load utils functions -------------------------------------------------
 library(sf)
@@ -18,11 +19,9 @@ options(max.print=1000)
 
 # 2. Global Parameters -------------------------------------------------------
 path <- "/home/piscop/"
-month <- as.Date("2015-11-01")
 create_folders(path)
-spatial_databases <- load_dataset2(path) # gauge rain data
+init_date <- "2015-01-01"
+last_date <- "2015-12-01"
 
 # Run PISCOp -------------------------------------------------------
-sp_data <- create_spatial_dataset(path, month, spatial_databases)
-run_PISCOp_m(path = path, sp_data = sp_data$monthly)
-run_PISCOp_d(path = path, sp_data = sp_data$daily)
+run_PISCOp(path, init_date, last_date)

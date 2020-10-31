@@ -939,9 +939,11 @@ mean_double_Station <- function(gauge = NULL, sat = NULL, longlat = TRUE) {
 }
 
 create_spatial_dataset <- function(path, month, spatial_databases) {
-  days_base <-   days <- paste0(
+  month <- as.Date(month)
+  lb_ndays <- sprintf("%02d", (month %>% days_in_month() %>% seq_len())) # number of days
+  days_base <- paste0(
     format(month, "%Y-%m-"),
-    month %>% days_in_month() %>% seq_len() %>% sprintf("%02d", .) # number of days
+    lb_ndays
   ) %>% as.Date() %>% format("date_%Y%m%d")
   month_base <- format(as.Date(month), "date_%Y%m%d")
 
@@ -1008,7 +1010,6 @@ create_spatial_dataset <- function(path, month, spatial_databases) {
     monthly = as(monthly_dataset, "Spatial")
   )
 }
-
 
 ROK <- function (gauge, cov, formula, model, crossval = F,nfold, ...) {
   projection(cov) <- projection(gauge)
@@ -1387,4 +1388,81 @@ create_chirm_d <- function(chirp_d, days, path) {
     CHIRPMds[[index]] <- CHIRPMd
   }
   stack(CHIRPMds)
+}
+
+
+run_PISCOp <- function(path, init_date, last_date) {
+  dates <- seq(as.Date(init_date), as.Date(last_date), "month") %>% as.character()
+  spatial_databases <- load_dataset2(path) # gauge rain data
+  for (date in dates) {
+    sp_data <- create_spatial_dataset(path, date, spatial_databases)
+    run_PISCOp_m(path = path, sp_data = sp_data$monthly)
+    run_PISCOp_d(path = path, sp_data = sp_data$daily)
+  }
+}
+
+load_dataset2 <- function(path) {
+  # Searching .csv dataset
+  message("Searching metadata, day_data and month_data dataset ...")
+
+  # Download from GITHUB
+  github_pisco <- "https://github.com/csaybar/PISCO_libelula/raw/master/data/"
+
+  # qmodels
+  # qmodels <- sprintf("%s%s", github_pisco, "qm_models.RData")
+  # qmodels_data <- sprintf("%s/data/qm_models.RData", path)
+  # download.file(qmodels, qmodels_data)
+
+  # cutoff
+  # scr <- sprintf("%s%s", github_pisco, "senamhi_cutoff_ratios.RData")
+  # scr_data <- sprintf("%s/data/senamhi_cutoff_ratios.RData", path)
+  # download.file(scr, scr_data)
+
+  # gauge?
+  # sgd <- sprintf("%s%s", github_pisco, "senamhi_gauge_data.RData")
+  # sgd_data <- sprintf("%s/data/senamhi_gauge_data.RData", path)
+  # download.file(sgd, sgd_data)
+
+  # PISCOpclim
+  # dir.create(sprintf("%s/data/PISCOpclim", path), showWarnings = FALSE)
+  # for (index in 1:12) {
+  #   file_url <- sprintf("%s/PISCOpclim/%02d.tif", github_pisco, index)
+  #   file_dok <- sprintf("%s/data/PISCOpclim/%02d.tif", path, index)
+  #   download.file(file_url, file_dok)
+  # }
+
+  # CHPclim
+  # dir.create(sprintf("%s/data/CHPclim", path), showWarnings = FALSE)
+  # for (index in 1:12) {
+  #   file_url <- sprintf("%s/CHPclim/%02d.tif", github_pisco, index)
+  #   file_dok <- sprintf("%s/data/CHPclim/%02d.tif", path, index)
+  #   download.file(file_url, file_dok)
+  # }
+
+  # *.csv dataset
+  month_data <- sprintf("%s/data/month_data.csv", path)
+  day_data <- sprintf("%s/data/day_data.csv", path)
+  metadata <- sprintf("%s/data/metadata.csv", path)
+
+  if (!(file.exists(month_data) & file.exists(metadata) & file.exists(day_data))) {
+    if (!file.exists(month_data)) {
+      message(month_data, " doesn't found. Downloading ....")
+      download_gauge_month_data(month_data)
+    }
+    if (!file.exists(day_data)) {
+      message(day_data, " doesn't found. Downloading ....")
+      download_gauge_day_data(day_data)
+    }
+    if (!file.exists(metadata)) {
+      message(metadata, " doesn't found. Downloading ....")
+      download_gauge_metadata_data(metadata)
+    }
+    #stop("PISCOp needs monthly and daily  data and metadata in csv format")
+  }
+
+  day_data_csv <- read.csv(day_data, stringsAsFactors = FALSE)
+  month_data_csv <- read.csv(month_data, stringsAsFactors = FALSE)
+  meta_data_csv <- read.csv(metadata, stringsAsFactors = FALSE)
+
+  list(day = day_data_csv, month = month_data_csv, metadata = meta_data_csv)
 }
