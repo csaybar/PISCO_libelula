@@ -1466,3 +1466,152 @@ load_dataset2 <- function(path) {
 
   list(day = day_data_csv, month = month_data_csv, metadata = meta_data_csv)
 }
+
+
+create_spatial_dataset2 <- function(path, rg_code, spatial_databases, step = "monthly") {
+  day_data_csv <- spatial_databases$day
+  day_data <- day_data_csv[paste0("X", rg_code)]
+
+  month_data_csv <- spatial_databases$month
+  month_data <- month_data_csv[paste0("X", rg_code)]
+
+  metadata_csv <- spatial_databases$metadata %>%
+    '['(c("V_COD_ESTA", "Y_LONGITUD", "X_LATITUD")) %>%
+    '['(spatial_databases$metadata$V_COD_ESTA %in%  rg_code,)
+
+  # daily data
+  day_dates <- sprintf("date_%s", format(as.Date(day_data_csv[[1]]), "%Y%m%d"))
+  month_dates <- sprintf("date_%s", format(as.Date(month_data_csv[[1]]), "%Y%m%d"))
+
+  month_df <- month_data %>% t %>% as.data.frame()
+  colnames(month_df) <- month_dates
+
+  day_df <- day_data %>% t %>% as.data.frame()
+  colnames(day_df) <- day_dates
+
+  colnames(metadata_csv) <- c("code", "x", "y")
+
+  day_df_sp  <- cbind(metadata_csv, day_df)
+  coordinates(day_df_sp) <- ~x + y
+  crs(day_df_sp) <- "+proj=longlat +datum=WGS84"
+
+  month_df_sp  <- cbind(metadata_csv, month_df)
+  coordinates(month_df_sp) <- ~x + y
+  crs(month_df_sp) <- "+proj=longlat +datum=WGS84"
+
+  if (step == "monthly") {
+    month_df_sp
+  } else if (step == "daily") {
+    day_df_sp
+  } else {
+    stop("Please define properly the argument step")
+  }
+}
+
+complete_CUTOFF_m <- function(path, sp_data, spatial_databases) {
+  load(sprintf("%s/data/senamhi_cutoff_ratios.RData", path))
+  # 1. Create a sp object of the rain gauge of interest
+  rg_code <- sp_data$code
+  rg_values <- as.numeric(sp_data@data[-1])
+  cutoff_group <- cutoff_ratios$cutoff_monthly[[as.character(rg_code)]]
+
+  if (anyNA(cutoff_group$raingauges)) {
+    message("There is no exist neighbor rain gauges ... imposible to run CUTOFF.",
+            " Try quantile models ...")
+    sp_data
+  } else{
+    # 2. Create a sp object with high-correlated rain gauges
+    sp_data_group <- create_spatial_dataset2(
+      path = path,
+      rg_code = cutoff_group$raingauges,
+      spatial_databases = spatial_databases,
+      step = "monthly"
+    )
+
+    # 3. CUTOFF
+    R <- apply(sp_data_group[-1]@data, 2, function(x) mean(x, na.rm = TRUE))
+    R_m <- cutoff_group[["rm"]][month(spatial_databases$month$Date)]
+    C_m <- cutoff_group[["cm"]][month(spatial_databases$month$Date)]
+    e <- 0.01
+    cat("PEARSON:", cor(rg_values, R*R_m/(C_m + e), use = "pairwise.complete.obs"))
+    cat("BIAS:", pbias(rg_values, R*R_m/(C_m + e)))
+    rg_values[is.na(rg_values)] <- (R*R_m/(C_m + e))[is.na(rg_values)]
+
+    # 4. Save resusts in a sp format
+    new_values <- rg_value %>% t %>% as.data.frame()
+    colnames(new_values) <- colnames(sp_data[-1]@data)
+    sp_data@data <- new_values
+    sp_data
+  }
+}
+
+complete_CUTOFF_d <- function(path, sp_data, spatial_databases) {
+  load(sprintf("%s/data/senamhi_cutoff_ratios.RData", path))
+  # 1. Create a sp object of the rain gauge of interest
+  rg_code <- sp_data$code
+  rg_value <- as.numeric(sp_data[-1]@data)
+  cutoff_group <- cutoff_ratios$cutoff_daily[[as.character(rg_code)]]
+
+  if (anyNA(cutoff_group$raingauges)) {
+    message("There is no exist neighbor rain gauges ... imposible to run CUTOFF.",
+            " Try quantile models ...")
+    sp_data
+  } else{
+    # 2. Create a sp object with high-correlated rain gauges
+    sp_data_group <- create_spatial_dataset2(
+      path = path,
+      rg_code = cutoff_group$raingauges,
+      spatial_databases = spatial_databases,
+      step = "daily"
+    )
+
+    # 3. CUTOFF
+    R <- apply(sp_data_group[-1]@data, 2, function(x) mean(x, na.rm = TRUE))
+    R_m <- cutoff_group[["rm"]][month(spatial_databases$day$fechas)]
+    C_m <- cutoff_group[["cm"]][month(spatial_databases$day$fechas)]
+    e <- 0.01
+    cat("PEARSON:", cor(rg_values, R*R_m/(C_m + e), use = "pairwise.complete.obs"))
+    cat("BIAS:", pbias(rg_values, R*R_m/(C_m + e)))
+    rg_value[is.na(rg_value)] <- (R*R_m/C_m)[is.na(rg_value)]
+
+    # 4. Save resusts in a sp format
+    new_values <- rg_value %>% t %>% as.data.frame()
+    colnames(new_values) <- colnames(sp_data[-1]@data)
+    sp_data@data <- new_values
+    sp_data
+  }
+}
+
+complete_qm_d <- function(path, sat_value, sp_data) {
+  load(sprintf("%s/data/qm_models.RData", path))
+  # 1. Create a sp object of the rain gauge of interest
+  sp_data <- create_spatial_dataset2(path, rg_code, spatial_databases)
+  rg_data <- as.numeric(sp_data[-1]@data)
+  # 2. run the trained model
+  # sat_value <-  1:length(rg_value)
+  sat_value_corrected <- qmap_get_m(sat_value, qm_list$qm_daily[[as.character(rg_code)]])
+  rg_data[is.na(rg_data)] <- sat_value_corrected[is.na(rg_data)]
+
+  # 3. Save resuslts in a sp format
+  new_values <- rg_data %>% t %>% as.data.frame()
+  colnames(new_values) <- colnames(sp_data[-1]@data)
+  sp_data@data <- new_values
+  sp_data
+}
+
+complete_qm_m <- function(path, sat_value, sp_data) {
+  load(sprintf("%s/data/qm_models.RData", path))
+  # 1. Create a sp object of the rain gauge of interest
+  rg_data <- as.numeric(sp_data[-1]@data)
+  # 2. run the trained model
+  # sat_value <-  1:length(rg_value)
+  sat_value_corrected <- qmap_get_m(sat_value, qm_list$qm_monthly[[as.character(rg_code)]])
+  rg_data[is.na(rg_data)] <- sat_value_corrected[is.na(rg_data)]
+
+  # 3. Save resuslts in a sp format
+  new_values <- rg_data %>% t %>% as.data.frame()
+  colnames(new_values) <- colnames(sp_data[-1]@data)
+  sp_data@data <- new_values
+  sp_data
+}
+
