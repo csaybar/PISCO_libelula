@@ -1538,7 +1538,7 @@ complete_CUTOFF_m <- function(path, sp_data, spatial_databases) {
     rg_values[is.na(rg_values)] <- (R*R_m/(C_m + e))[is.na(rg_values)]
 
     # 4. Save resusts in a sp format
-    new_values <- rg_value %>% t %>% as.data.frame()
+    new_values <- rg_values %>% t %>% as.data.frame()
     colnames(new_values) <- colnames(sp_data[-1]@data)
     sp_data@data <- new_values
     sp_data
@@ -1549,7 +1549,7 @@ complete_CUTOFF_d <- function(path, sp_data, spatial_databases) {
   load(sprintf("%s/data/senamhi_cutoff_ratios.RData", path))
   # 1. Create a sp object of the rain gauge of interest
   rg_code <- sp_data$code
-  rg_value <- as.numeric(sp_data[-1]@data)
+  rg_values <- as.numeric(sp_data[-1]@data)
   cutoff_group <- cutoff_ratios$cutoff_daily[[as.character(rg_code)]]
 
   if (anyNA(cutoff_group$raingauges)) {
@@ -1570,12 +1570,12 @@ complete_CUTOFF_d <- function(path, sp_data, spatial_databases) {
     R_m <- cutoff_group[["rm"]][month(spatial_databases$day$fechas)]
     C_m <- cutoff_group[["cm"]][month(spatial_databases$day$fechas)]
     e <- 0.01
+    rg_values[is.na(rg_values)] <- (R*R_m/C_m)[is.na(rg_values)]
     cat("PEARSON:", cor(rg_values, R*R_m/(C_m + e), use = "pairwise.complete.obs"))
     cat("BIAS:", pbias(rg_values, R*R_m/(C_m + e)))
-    rg_value[is.na(rg_value)] <- (R*R_m/C_m)[is.na(rg_value)]
 
     # 4. Save resusts in a sp format
-    new_values <- rg_value %>% t %>% as.data.frame()
+    new_values <- rg_values %>% t %>% as.data.frame()
     colnames(new_values) <- colnames(sp_data[-1]@data)
     sp_data@data <- new_values
     sp_data
@@ -1585,11 +1585,12 @@ complete_CUTOFF_d <- function(path, sp_data, spatial_databases) {
 complete_qm_d <- function(path, sat_value, sp_data) {
   load(sprintf("%s/data/qm_models.RData", path))
   # 1. Create a sp object of the rain gauge of interest
-  sp_data <- create_spatial_dataset2(path, rg_code, spatial_databases)
   rg_data <- as.numeric(sp_data[-1]@data)
+
   # 2. run the trained model
   # sat_value <-  1:length(rg_value)
   sat_value_corrected <- qmap_get_m(sat_value, qm_list$qm_daily[[as.character(rg_code)]])
+  sat_value_corrected[sat_value_corrected %in% min(sat_value_corrected)] <- 0
   rg_data[is.na(rg_data)] <- sat_value_corrected[is.na(rg_data)]
 
   # 3. Save resuslts in a sp format
@@ -1615,3 +1616,14 @@ complete_qm_m <- function(path, sat_value, sp_data) {
   sp_data
 }
 
+multi_extract <- function(bricks, completed_cutoff_rg) {
+  results_extract <- list()
+  for (index in seq_along(daily_chirp)) {
+    time_series <- raster::extract(
+      x = brick(bricks[index]),
+      y = completed_cutoff_rg
+    ) %>% as.numeric()
+    results_extract[[index]] <- time_series
+  }
+  unlist(results_extract)
+}

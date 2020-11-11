@@ -30,7 +30,7 @@ sp_data <- create_spatial_dataset2(
   path = path,
   rg_code = rg_code,
   spatial_databases = spatial_databases,
-  step = "daily"
+  step = "monthly"
 )
 
 # 5. Complete missing values using CUTOFF
@@ -38,7 +38,8 @@ completed_cutoff_rg <- complete_CUTOFF_m(path, sp_data, spatial_databases)
 
 # 5. Complete missing values using Quantile Mapping
 # Donwload rain sat data here:
-sat_value <- 1:ncol(sp_data)
+daily_chirp <- list.files("/home/csaybar/CHIRP/monthly/",full.names = TRUE)
+sat_value <- multi_extract(daily_chirp, completed_cutoff_rg)
 completed_qm_rg <- complete_qm_m(path, sat_value, sp_data)
 
-
+plot(as.numeric(completed_qm_rg@data),type="l")
