@@ -9,6 +9,7 @@ RUN R -e "install.packages('qmap')"
 RUN R -e "install.packages('RCurl')"
 RUN R -e "install.packages('hydroGOF')"
 
+COPY files.tar.gz .
 # Add folders
-ADD data $HOME/data
-ADD src $HOME/src
+# ADD  data $HOME/data 
+# ADD  src $HOME/src

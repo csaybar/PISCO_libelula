@@ -10,7 +10,7 @@ library(R.utils)
 library(magrittr)
 library(tidyverse)
 library(lubridate)
-source("utils.R")
+source("src/utils.R")
 options(max.print=1000)
 
 # 2. Define a path to save final and intermediate files

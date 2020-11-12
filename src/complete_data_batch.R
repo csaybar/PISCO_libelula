@@ -36,6 +36,7 @@ for (index in seq_along(rg_codes)) {
     spatial_databases = spatial_databases,
     step = "monthly"
   )
+
   # Complete with cutoff!
   completed_cutoff_rg <- complete_CUTOFF_m(path, sp_data, spatial_databases)
 

@@ -407,11 +407,13 @@ cutoff_dataset_creator_m <- function(mgauge) {
       as.data.frame() %>%
       as_tibble() %>%
       select(starts_with("date"))
+
     senamhi_gauge_one_dates <- senamhi_gauge_one_d %>%
       as.numeric() %>%
       'names<-'(colnames(senamhi_gauge_one_d)) %>%
       na.omit() %>%
       names()
+
     senamhi_gauge_one_length <- senamhi_gauge_one_dates %>%
       length()
 
@@ -429,6 +431,7 @@ cutoff_dataset_creator_m <- function(mgauge) {
       as.data.frame() %>%
       as_tibble() %>%
       '['(senamhi_gauge_one_dates)
+
 
     ## select only rain station with more than 10 years at common and cor > 0.8
     selected_raingauges <- NULL
@@ -473,7 +476,7 @@ cutoff_dataset_creator_m <- function(mgauge) {
 
     # Calculating Rm
     # Rm -> Monthly mean value for the group of station of a specific rain gauge.
-    senamhi_gauge_selected_final[-1] %>%
+    senamhi_gauge_selected_final@data[-1] %>%
       as.data.frame() %>%
       as_tibble() %>% apply(2, function(x) mean(x, na.rm = TRUE)) ->
       final_partialrm
@@ -490,7 +493,6 @@ cutoff_dataset_creator_m <- function(mgauge) {
   }
   month_ratios_db
 }
-
 
 # dgauge is the daily dataset
 cutoff_dataset_creator_d <- function(dgauge) {
@@ -516,7 +518,7 @@ cutoff_dataset_creator_d <- function(dgauge) {
     }
 
     # 2. at least 10 years and cor > 0.8
-    min_day <- 12*365
+    min_day <- 10*365
 
     ## data available for the specific rain gauge
     senamhi_gauge_one_d <- senamhi_gauge_one[-1] %>%
@@ -582,11 +584,13 @@ cutoff_dataset_creator_d <- function(dgauge) {
       ] %>% as.numeric() %>% mean(na.rm=TRUE)
       cm_data <- append(cm_data, month_data)
     }
+
     # Calculating Rm
-    senamhi_gauge_selected_final[-1] %>%
+    senamhi_gauge_selected_final@data[-1] %>%
       as.data.frame() %>%
       as_tibble() %>% apply(2, function(x) mean(x, na.rm = TRUE)) ->
       final_partialrm
+
     rm_data <- NULL
     for (index in vector) {
       month_data <- final_partialrm [
@@ -604,9 +608,9 @@ cutoff_dataset_creator_d <- function(dgauge) {
 cutoff_dataset_creator <- function(path) {
   senamhi_gauge_data <- download_senamhi_data(path)
   message("Creating CUTOFF monthly parameters ... please wait")
-  monthly_ratios <- cutoff_dataset_creator_m(senamhi_gauge_data$monthly)
+  monthly_ratios <- cutoff_dataset_creator_m(mgauge = senamhi_gauge_data$monthly)
   message("Creating CUTOFF daily parameters ... please wait")
-  daily_ratios <- cutoff_dataset_creator_d(senamhi_gauge_data$daily)
+  daily_ratios <- cutoff_dataset_creator_d(dgauge = senamhi_gauge_data$daily)
   cutoff_ratios <- list(cutoff_monthly = monthly_ratios, cutoff_daily = daily_ratios)
   gauge_data <- sprintf("%s/data/senamhi_cutoff_ratios.RData", path)
   save(cutoff_ratios, file = gauge_data)
@@ -1618,7 +1622,7 @@ complete_qm_m <- function(path, sat_value, sp_data) {
 
 multi_extract <- function(bricks, completed_cutoff_rg) {
   results_extract <- list()
-  for (index in seq_along(daily_chirp)) {
+  for (index in seq_along(bricks)) {
     time_series <- raster::extract(
       x = brick(bricks[index]),
       y = completed_cutoff_rg
