@@ -1631,3 +1631,89 @@ multi_extract <- function(bricks, completed_cutoff_rg) {
   }
   unlist(results_extract)
 }
+
+
+check_timeserie <- function(sp_data, add = FALSE, ...) {
+  data <- sp_data@data[-1]
+  values <- as.numeric(data)
+  dates <- as.Date(gsub("date_", "", names(data)), format = "%Y%m%d")
+  message_01 <- sprintf(
+    "Percentage of missing data: %s %%",
+    round(sum(is.na(values))/ length(values) * 100, 2)
+  )
+  cat(message_01)
+  if (add) {
+    lines(dates, values, ...)
+  } else {
+    plot(dates, values, type = "l", ...)
+  }
+}
+
+
+complete_time_series_m <-  function(path, sp_data, spatial_databases, sat_value, method = "CUTOFF+QM") {
+  methods <- strsplit(method, "\\+")[[1]]
+  method_name_cond  <- all(methods %in% c("CUTOFF", "QM"))
+
+  if (!method_name_cond) {
+    stop("complete_time_series only support the methods: CUTOFF & QM")
+  }
+
+  methods[methods %in% "CUTOFF"] = "complete_CUTOFF_m"
+  methods[methods %in% "QM"] = "complete_qm_m"
+
+  if (length(methods) == 1) {
+    if (methods == "complete_CUTOFF_m") {
+      run_model <- sprintf("%s(path, sp_data, spatial_databases)", methods)
+      sp_data <- eval(parse(text=run_model))
+    } else if (methods == "complete_qm_m") {
+      run_model <- sprintf("%s(path, sat_value, sp_data)", methods)
+      sp_data <- eval(parse(text=run_model))
+    }
+  }
+  else if(length(methods) == 2) {
+    run_model1 <- "complete_CUTOFF_m(path, sp_data, spatial_databases)"
+    run_model2 <- "complete_qm_m(path, sat_value, sp_data)"
+    if (method == "CUTOFF+QM") {
+      sp_data <- eval(parse(text=run_model1))
+      sp_data <- eval(parse(text=run_model2))
+    } else if (method == "QM+CUTOFF") {
+      sp_data <- eval(parse(text=run_model2))
+    }
+  }
+  return(sp_data)
+}
+
+
+
+complete_time_series_d <-  function(path, sp_data, spatial_databases, sat_value, method = "CUTOFF+QM") {
+  methods <- strsplit(method, "\\+")[[1]]
+  method_name_cond  <- all(methods %in% c("CUTOFF", "QM"))
+
+  if (!method_name_cond) {
+    stop("complete_time_series only support the methods: CUTOFF & QM")
+  }
+
+  methods[methods %in% "CUTOFF"] = "complete_CUTOFF_d"
+  methods[methods %in% "QM"] = "complete_qm_d"
+
+  if (length(methods) == 1) {
+    if (methods == "complete_CUTOFF_d") {
+      run_model <- sprintf("%s(path, sp_data, spatial_databases)", methods)
+      sp_data <- eval(parse(text=run_model))
+    } else if (methods == "complete_qm_d") {
+      run_model <- sprintf("%s(path, sat_value, sp_data)", methods)
+      sp_data <- eval(parse(text=run_model))
+    }
+  }
+  else if(length(methods) == 2) {
+    run_model1 <- "complete_CUTOFF_d(path, sp_data, spatial_databases)"
+    run_model2 <- "complete_qm_d(path, sat_value, sp_data)"
+    if (method == "CUTOFF+QM") {
+      sp_data <- eval(parse(text=run_model1))
+      sp_data <- eval(parse(text=run_model2))
+    } else if (method == "QM+CUTOFF") {
+      sp_data <- eval(parse(text=run_model2))
+    }
+  }
+  return(sp_data)
+}
