@@ -756,7 +756,7 @@ run_qm_model <- function(pp_values, sat_values, qm_list) {
   values
 }
 
-run_PISCOp_m <- function(path, sp_data) {
+run_PISCOp_m <- function(path, sp_data, complete_series, to_delete) {
   # Wrangling dates
   month <- as.Date(names(sp_data[2]), format = "date_%Y%m%d")
 
@@ -770,25 +770,54 @@ run_PISCOp_m <- function(path, sp_data) {
   rg_data <- rg_data_brute
   message(sprintf("Number of NA in Brute data: %s", sum(is.na(rg_data[[1]]))))
 
-  # 3. Run Monthly CUTOFF
-  test_number_rg(rg_data)
-  rg_data[[1]] <- run_cutoff_m(pp_values = rg_data, cutoff_ratios = cutoff_ratios)
-  rg_data[[1]][is.nan(rg_data[[1]])] <- NA
-  message(sprintf("Number of NA after CUTOFF: %s", sum(is.na(rg_data[[1]]))))
+  # todelete
+  filter_bad_rg <- which(!sp_data$V_COD_ESTA %in% to_delete)
 
   # 4. Run Monthly Qm
   sat_data <- raster::extract(chirpx_m, rg_data)
-  rg_data[[1]] <- run_qm_model(
+  qm_values <- run_qm_model(
     pp_values = rg_data,
     sat_values = sat_data,
     qm_list = qm_list$qm_monthly
   )
-  message(sprintf("Number of NA after Qm: %s", sum(is.na(rg_data$date_19810101))))
+
+  # 3. Run Monthly CUTOFF
+  test_number_rg(rg_data)
+  cutoff_values <- run_cutoff_m(pp_values = rg_data, cutoff_ratios = cutoff_ratios)
+  cutoff_values[is.nan(cutoff_values)] <- NA
+
+  # 3.5 Select final values
+
+  # Qm stations
+  qm_station <- complete_series == "QM"
+  qm_station[qm_station == FALSE] <- NA
+  final_qm_values <- qm_values*qm_station
+
+  # cutoff stations
+  cq_station <- complete_series == "CUTOFF+QM"
+  cq_station[cq_station == FALSE] <- NA
+  final_cq_values <- cutoff_values*cq_station
+
+  # merge cutoff + qm stations
+  final_s <- data.frame(qm = final_qm_values, cutoff = final_cq_values) %>%
+    apply(1, function(x) mean(x, na.rm = TRUE))
+  final_s[is.nan(final_s)] = NA
+
+  # merge againg with qm
+  final_ss <- data.frame(fs = final_s, qm = qm_values) %>%
+    apply(1, function(x) mean(x, na.rm = TRUE))
+
+  rg_data[[1]] <- final_ss
+  rg_data <- rg_data[filter_bad_rg,]
+
+  # message(sprintf("Number of NA after CUTOFF: %s", sum(is.na(rg_data[[1]]))))
+  # message(sprintf("Number of NA after Qm: %s", sum(is.na(rg_data$date_19810101))))
 
   # 5. CHIRPM
   chirpm_m <- suppressMessages(
     create_chirm_m(chirp_m = chirpx_m, month = month, path = path)
   )
+
   writeRaster(
     x = chirpm_m,
     filename = sprintf(
@@ -1223,7 +1252,8 @@ var_fit <- function (gauge, cov, formula, ...){
 RIDW <- function (gauge, cov, formula, idpR = seq(0.8, 3.5, 0.1), ...) {
   sav_name <- names(gauge)
   ext <- raster::extract(cov, gauge, cellnumber = F, sp = T)
-  gauge <- gauge[which(!is.na(ext$sat)),]
+  rg_v <- which(!is.na(ext$sat))
+  gauge <- gauge[rg_v,]
   station <- gauge
   linear <- na.omit(ext@data) %>% tbl_df %>% mutate_all(as.character) %>%
     mutate_all(as.numeric)
@@ -1252,7 +1282,7 @@ RIDW <- function (gauge, cov, formula, idpR = seq(0.8, 3.5, 0.1), ...) {
   Ridw
 }
 
-run_PISCOp_d <- function(path, sp_data) {
+run_PISCOp_d <- function(path, sp_data, complete_series, to_delete) {
   # Wrangling dates
   days <- as.Date(names(sp_data[-1]), format = "date_%Y%m%d")
 
@@ -1267,21 +1297,48 @@ run_PISCOp_d <- function(path, sp_data) {
   rg_data <- rg_data_brute
   message(sprintf("Number of NA in Brute data: %s", sum(is.na(rg_data@data))))
 
-  # 3. Run Monthly CUTOFF
+  # 3. Run Daily Qm
   test_number_rg(rg_data)
-  rg_data@data <- run_cutoff_d(pp_values = rg_data, cutoff_ratios = cutoff_ratios)
-  message(sprintf("Number of NA after CUTOFF: %s", sum(is.na(rg_data@data))))
-
-  # 4. Run Monthly Qm
+  qm_values <- rg_data@data*NA
   sat_data <- raster::extract(chirpx_d, rg_data)
   for (qm_index in seq_along(days)) {
-    rg_data[[qm_index]] <- run_qm_model(
+    qm_values[[qm_index]] <- run_qm_model(
       pp_values = rg_data[qm_index],
       sat_values = sat_data[,qm_index],
       qm_list = qm_list$qm_daily
     )
   }
-  message(sprintf("Number of NA after Qm: %s", sum(is.na(rg_data@data))))
+  qm_station <- complete_series == "QM"
+  qm_station[qm_station == FALSE] <- NA
+  final_qm_values <- qm_values*qm_station
+
+  # CUTOFFd
+  cutoff_values <- run_cutoff_d(pp_values = rg_data, cutoff_ratios = cutoff_ratios)
+  cq_station <- complete_series == "CUTOFF+QM"
+  cq_station[cq_station == FALSE] <- NA
+  final_cq_values <- cutoff_values*cq_station
+
+  # merge cutoff + qm stations
+  final_s <- rg_data@data*NA
+  for (qm_index in seq_along(days)) {
+    final_s1 <- data.frame(qm = final_qm_values[[qm_index]], cutoff = final_cq_values[[qm_index]]) %>%
+      apply(1, function(x) mean(x, na.rm = TRUE))
+    final_s1[is.nan(final_s1)] = NA
+    final_s[[qm_index]] <- final_s1
+  }
+
+  # merge againg with qm
+  final_ss <- rg_data@data*NA
+  for (qm_index in seq_along(days)) {
+    final_ss1 <- data.frame(qm = final_s[[qm_index]], cutoff = qm_values[[qm_index]]) %>%
+      apply(1, function(x) mean(x, na.rm = TRUE))
+    final_ss[[qm_index]] <- final_ss1
+  }
+
+  rg_data@data <- final_ss
+  # to delete
+  filter_bad_rg <- which(!sp_data$V_COD_ESTA %in% to_delete)
+  rg_data <- rg_data[filter_bad_rg,]
 
   # 5. CHIRPM
   chirpm_d <- suppressMessages(

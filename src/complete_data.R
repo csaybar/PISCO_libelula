@@ -37,7 +37,7 @@ check_timeserie(sp_data, col = "black", main = "raw data")
 
 # 5. Get time serie
 daily_chirp <- list.files("/home/csaybar/CHIRP/daily/",full.names = TRUE)
-sat_value <- multi_extract(daily_chirp, completed_cutoff_rg)
+sat_value <- multi_extract(daily_chirp, sp_data)
 
 
 # 5. Complete missing values using CUTOFF
@@ -49,5 +49,5 @@ final_sp <- complete_time_series_d(
   method = "CUTOFF+QM"
 )
 
-check_timeserie(final_sp, col = "red", main = "QM")
+check_timeserie(final_sp, col = "red", main = "CUTOFF+QM")
 check_timeserie(sp_data, col = "black", main = "raw data", add = TRUE)
