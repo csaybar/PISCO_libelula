@@ -765,7 +765,7 @@ run_PISCOp_m <- function(path, sp_data, complete_series, to_delete) {
   chirpx_m <- download_CHIRPm(date = month, path = path)
 
   # 2. Complete rain gauge
-  load(sprintf("%s/data/senamhi_cutoff_ratios.RData", path))
+  load(sprintf("%sdata/senamhi_cutoff_ratios.RData", path))
   load(sprintf("%s/data/qm_models.RData", path))
   rg_data_brute <- sp_data[2]
   rg_data <- rg_data_brute
@@ -1463,7 +1463,7 @@ run_PISCOp <- function(path, init_date, last_date) {
   }
 }
 
-load_dataset2 <- function(path) {
+load_dataset2 <- function(path, load_clim = TRUE) {
   # Searching .csv dataset
   message("Searching metadata, day_data and month_data dataset ...")
 
@@ -1471,35 +1471,37 @@ load_dataset2 <- function(path) {
   github_pisco <- "https://github.com/csaybar/PISCO_libelula/raw/master/data/"
 
   # qmodels
-  # qmodels <- sprintf("%s%s", github_pisco, "qm_models.RData")
-  # qmodels_data <- sprintf("%s/data/qm_models.RData", path)
-  # download.file(qmodels, qmodels_data)
+  qmodels <- sprintf("%s%s", github_pisco, "qm_models.RData")
+  qmodels_data <- sprintf("%s/data/qm_models.RData", path)
+  download.file(qmodels, qmodels_data)
 
   # cutoff
-  # scr <- sprintf("%s%s", github_pisco, "senamhi_cutoff_ratios.RData")
-  # scr_data <- sprintf("%s/data/senamhi_cutoff_ratios.RData", path)
-  # download.file(scr, scr_data)
+  scr <- sprintf("%s%s", github_pisco, "senamhi_cutoff_ratios.RData")
+  scr_data <- sprintf("%s/data/senamhi_cutoff_ratios.RData", path)
+  download.file(scr, scr_data)
 
   # gauge?
   # sgd <- sprintf("%s%s", github_pisco, "senamhi_gauge_data.RData")
   # sgd_data <- sprintf("%s/data/senamhi_gauge_data.RData", path)
   # download.file(sgd, sgd_data)
 
-  # PISCOpclim
-  # dir.create(sprintf("%s/data/PISCOpclim", path), showWarnings = FALSE)
-  # for (index in 1:12) {
-  #   file_url <- sprintf("%s/PISCOpclim/%02d.tif", github_pisco, index)
-  #   file_dok <- sprintf("%s/data/PISCOpclim/%02d.tif", path, index)
-  #   download.file(file_url, file_dok)
-  # }
+  if (load_clim) {
+    # PISCOpclim
+    dir.create(sprintf("%s/data/PISCOpclim", path), showWarnings = FALSE)
+    for (index in 1:12) {
+      file_url <- sprintf("%s/PISCOpclim/%02d.tif", github_pisco, index)
+      file_dok <- sprintf("%s/data/PISCOpclim/%02d.tif", path, index)
+      download.file(file_url, file_dok)
+    }
 
-  # CHPclim
-  # dir.create(sprintf("%s/data/CHPclim", path), showWarnings = FALSE)
-  # for (index in 1:12) {
-  #   file_url <- sprintf("%s/CHPclim/%02d.tif", github_pisco, index)
-  #   file_dok <- sprintf("%s/data/CHPclim/%02d.tif", path, index)
-  #   download.file(file_url, file_dok)
-  # }
+    # CHPclim
+    dir.create(sprintf("%s/data/CHPclim", path), showWarnings = FALSE)
+    for (index in 1:12) {
+      file_url <- sprintf("%s/CHPclim/%02d.tif", github_pisco, index)
+      file_dok <- sprintf("%s/data/CHPclim/%02d.tif", path, index)
+      download.file(file_url, file_dok)
+    }
+  }
 
   # *.csv dataset
   month_data <- sprintf("%s/data/month_data.csv", path)
@@ -1528,7 +1530,6 @@ load_dataset2 <- function(path) {
 
   list(day = day_data_csv, month = month_data_csv, metadata = meta_data_csv)
 }
-
 
 create_spatial_dataset2 <- function(path, rg_code, spatial_databases, step = "monthly") {
   day_data_csv <- spatial_databases$day
