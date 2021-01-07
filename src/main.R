@@ -25,7 +25,7 @@ spatial_databases <- load_dataset2(path) # gauge rain data
 
 # Run PISCOp -------------------------------------------------------
 sp_data <- create_spatial_dataset(path, month, spatial_databases)
-codigos <- read.csv("/home/csaybar/Downloads/metodo.csv")
+codigos <- read.csv("https://raw.githubusercontent.com/csaybar/PISCO_libelula/master/data/metodo.csv")
 complete_methods <- codigos$metodo
 to_delete <- codigos$V_COD_ESTA[which(codigos$metodo == "A")]
 
