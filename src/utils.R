@@ -102,17 +102,18 @@ load_dataset <- function(path) {
 }
 
 download_gauge_day_data <- function(day_data) {
-  day_path <- "https://drive.google.com/uc?id=1Duq9ruXfMG-DR1QBayRv_AZPRdgQNc7L&export=download"
+  day_path <- "ftp://pisco_seh:S3na.19-$Up-D4t%40$-20.Mi@ftp.senamhi.gob.pe/PISCO/day_data.csv"
   download.file(day_path, day_data)
 }
 
+month_data <- "/home/csaybar/Documents/Github/PISCO_libelula/month_data.csv"
 download_gauge_month_data <- function(month_data) {
-  month_path <- "https://drive.google.com/uc?id=1oKoae3qWGjjpCWnLUn_US0jpkv6xnzUD&export=download"
+  month_path <- "ftp://pisco_seh:S3na.19-$Up-D4t%40$-20.Mi@ftp.senamhi.gob.pe/PISCO/month_data.csv"
   download.file(month_path, month_data)
 }
 
 download_gauge_metadata_data <- function(metadata) {
-  metadata_path <- "https://drive.google.com/uc?id=15AkcK_-ZEg9i5kfVBV_Zu41hRSO4-ZTV&export=download"
+  metadata_path <- "ftp://pisco_seh:S3na.19-$Up-D4t%40$-20.Mi@ftp.senamhi.gob.pe/PISCO/metadata.csv"
   download.file(metadata_path, metadata)
 }
 

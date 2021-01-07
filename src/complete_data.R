@@ -32,7 +32,6 @@ sp_data <- create_spatial_dataset2(
   spatial_databases = spatial_databases,
   step = "daily"
 )
-
 check_timeserie(sp_data, col = "black", main = "raw data")
 
 # 5. Get time serie
