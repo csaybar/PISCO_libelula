@@ -1453,13 +1453,18 @@ create_chirm_d <- function(chirp_d, days, path) {
 }
 
 
-run_PISCOp <- function(path, init_date, last_date) {
+run_PISCOp <- function(path, init_date, last_date, load_clim = FALSE) {
   dates <- seq(as.Date(init_date), as.Date(last_date), "month") %>% as.character()
-  spatial_databases <- load_dataset2(path) # gauge rain data
+  spatial_databases <- load_dataset2(path, load_clim = FALSE) # gauge rain data
+  codigos <- read.csv("https://raw.githubusercontent.com/csaybar/PISCO_libelula/master/data/metodo.csv")
+  complete_methods <- codigos$metodo
+  to_delete <- codigos$V_COD_ESTA[which(codigos$metodo == "A")]
   for (date in dates) {
     sp_data <- create_spatial_dataset(path, date, spatial_databases)
-    run_PISCOp_m(path = path, sp_data = sp_data$monthly)
-    run_PISCOp_d(path = path, sp_data = sp_data$daily)
+    run_PISCOp_m(path = path, sp_data = sp_data$monthly,
+                 complete_series = complete_methods, to_delete = to_delete)
+    run_PISCOp_d(path = path, sp_data = sp_data$daily,
+                 complete_series = complete_methods, to_delete = to_delete)
   }
 }
 

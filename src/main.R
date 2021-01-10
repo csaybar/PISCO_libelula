@@ -21,7 +21,7 @@ options(max.print=1000)
 path <- "/home/csaybar/"
 month <- as.Date("2018-11-01")
 create_folders(path)
-spatial_databases <- load_dataset2(path, load_clim = TRUE) # gauge rain data
+spatial_databases <- load_dataset2(path, load_clim = F) # gauge rain data
 
 # Run PISCOp -------------------------------------------------------
 sp_data <- create_spatial_dataset(path, month, spatial_databases)
