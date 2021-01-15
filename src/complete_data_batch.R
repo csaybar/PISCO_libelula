@@ -18,36 +18,47 @@ source("src/utils.R")
 options(max.print=1000)
 
 # 2. Global Parameters ----------------------------------------------------
+path <- "/home/csaybar/"
 chirp_path <- "/home/csaybar/CHIRP" #Path with CHIRP in netcdf
 daily_chirp <- list.files(paste0(chirp_path,"/daily"), full.names = TRUE)
 montly_chirp <- list.files(paste0(chirp_path,"/monthly"), full.names = TRUE)
-
-
-path <- "/home/csaybar/"
+codigos <- read.csv("https://raw.githubusercontent.com/csaybar/PISCO_libelula/master/data/metodo.csv")
 create_folders(path)
-spatial_databases <- load_dataset2(path) # gauge rain data
+spatial_databases <- load_dataset2(path, load_clim = FALSE) # gauge rain data
 rg_codes <- spatial_databases$metadata$V_COD_ESTA
 
 # 3. Complete monthly data ------------------------------------------------
 for (index in seq_along(rg_codes)) {
+  # 3.1 Create a spatial object for a specific rain gauge (sp)
   sp_data <- create_spatial_dataset2(
     path = path,
     rg_code = rg_codes[index],
     spatial_databases = spatial_databases,
     step = "monthly"
   )
+  # 3.1 Create a spatial object for a specific rain gauge (sp)
+  # Get CHIRP precipitation time-series
+  sat_value <- multi_extract(montly_chirp, sp_data)
+  rg_code <- rg_codes[index]
 
-  # Complete with cutoff!
-  completed_cutoff_rg <- complete_CUTOFF_m(path, sp_data, spatial_databases)
+  if (codigos[codigos$V_COD_ESTA %in% sp_data$code, 2] == "A") {
+    next
+  }
 
-  # If not possible use Qm
-  sat_value <- multi_extract(montly_chirp, completed_cutoff_rg)
-  completed_qm_rg <- complete_qm_m(path, sat_value, sp_data)
+  # Complete monthly time series
+  final_sp <- complete_time_series_m(
+    path = path,
+    sp_data = sp_data,
+    spatial_databases = spatial_databases,
+    sat_value = sat_value,
+    method = codigos[codigos$V_COD_ESTA %in% sp_data$code, 2]
+  )
 
+  final_sp$code <- NULL
   # From sp to data.frame
   final_dataset <- cbind(id = rg_codes[index],
-                         coordinates(completed_qm_rg),
-                         completed_qm_rg@data)
+                         coordinates(final_sp),
+                         final_sp@data)
   if (index == 1) {
     final_dataset_merge <- final_dataset
   } else {
@@ -59,12 +70,21 @@ for (index in seq_along(rg_codes)) {
 
 # 4. Complete daily data ------------------------------------------------
 for (index in seq_along(rg_codes)) {
+  # 3.1 Create a spatial object for a specific rain gauge (sp)
   sp_data <- create_spatial_dataset2(
     path = path,
     rg_code = rg_codes[index],
     spatial_databases = spatial_databases,
     step = "daily"
   )
+
+  # 3.2 Get CHIRP precipitation time-series
+  sat_value <- multi_extract(daily_chirp, sp_data)
+  rg_code <- rg_codes[index]
+
+  if (codigos[codigos$V_COD_ESTA %in% sp_data$code, 2] == "A") {
+    next
+  }
 
   # Complete with cutoff!
   completed_cutoff_rg <- complete_CUTOFF_d(path, sp_data, spatial_databases)

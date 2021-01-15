@@ -106,7 +106,6 @@ download_gauge_day_data <- function(day_data) {
   download.file(day_path, day_data)
 }
 
-month_data <- "/home/csaybar/Documents/Github/PISCO_libelula/month_data.csv"
 download_gauge_month_data <- function(month_data) {
   month_path <- "ftp://pisco_seh:S3na.19-$Up-D4t%40$-20.Mi@ftp.senamhi.gob.pe/PISCO/month_data.csv"
   download.file(month_path, month_data)
@@ -1668,13 +1667,16 @@ complete_qm_d <- function(path, sat_value, sp_data) {
   sp_data
 }
 
-complete_qm_m <- function(path, sat_value, sp_data) {
+complete_qm_m <- function(path, sat_value, sp_data, rg_code) {
   load(sprintf("%s/data/qm_models.RData", path))
   # 1. Create a sp object of the rain gauge of interest
   rg_data <- as.numeric(sp_data[-1]@data)
   # 2. run the trained model
   # sat_value <-  1:length(rg_value)
   sat_value_corrected <- qmap_get_m(sat_value, qm_list$qm_monthly[[as.character(rg_code)]])
+  if (sum(is.na(rg_data)) == 0) {
+    return(sp_data)
+  }
   rg_data[is.na(rg_data)] <- sat_value_corrected[is.na(rg_data)]
 
   # 3. Save resuslts in a sp format
@@ -1730,17 +1732,21 @@ complete_time_series_m <-  function(path, sp_data, spatial_databases, sat_value,
       run_model <- sprintf("%s(path, sp_data, spatial_databases)", methods)
       sp_data <- eval(parse(text=run_model))
     } else if (methods == "complete_qm_m") {
-      run_model <- sprintf("%s(path, sat_value, sp_data)", methods)
+      rg_code <- sp_data$code
+      run_model <- sprintf("%s(path, sat_value, sp_data, rg_code)", methods)
       sp_data <- eval(parse(text=run_model))
     }
   }
   else if(length(methods) == 2) {
     run_model1 <- "complete_CUTOFF_m(path, sp_data, spatial_databases)"
-    run_model2 <- "complete_qm_m(path, sat_value, sp_data)"
+    run_model2 <- "complete_qm_m(path, sat_value, sp_data, rg_code)"
     if (method == "CUTOFF+QM") {
+      rg_code <- sp_data$code
       sp_data <- eval(parse(text=run_model1))
+      sp_data@data <- cbind(code = rg_code, sp_data@data)
       sp_data <- eval(parse(text=run_model2))
     } else if (method == "QM+CUTOFF") {
+      rg_code <- sp_data$code
       sp_data <- eval(parse(text=run_model2))
     }
   }
