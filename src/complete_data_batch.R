@@ -70,7 +70,7 @@ for (index in seq_along(rg_codes)) {
 
 # 4. Complete daily data ------------------------------------------------
 for (index in seq_along(rg_codes)) {
-  # 3.1 Create a spatial object for a specific rain gauge (sp)
+  # 4.1 Create a spatial object for a specific rain gauge (sp)
   sp_data <- create_spatial_dataset2(
     path = path,
     rg_code = rg_codes[index],
@@ -78,7 +78,7 @@ for (index in seq_along(rg_codes)) {
     step = "daily"
   )
 
-  # 3.2 Get CHIRP precipitation time-series
+  # 4.2 Get CHIRP precipitation time-series
   sat_value <- multi_extract(daily_chirp, sp_data)
   rg_code <- rg_codes[index]
 
@@ -86,17 +86,20 @@ for (index in seq_along(rg_codes)) {
     next
   }
 
-  # Complete with cutoff!
-  completed_cutoff_rg <- complete_CUTOFF_d(path, sp_data, spatial_databases)
-
-  # If not possible use Qm
-  sat_value <- multi_extract(daily_chirp, completed_cutoff_rg)
-  completed_qm_rg <- complete_qm_d(path, sat_value, sp_data)
+  # 4.3 Complete daily time series
+  final_sp <- complete_time_series_d(
+    path = path,
+    sp_data = sp_data,
+    spatial_databases = spatial_databases,
+    sat_value = sat_value,
+    method = codigos[codigos$V_COD_ESTA %in% sp_data$code, 2]
+  )
+  final_sp$code <- NULL
 
   # From sp to data.frame
   final_dataset <- cbind(id = rg_codes[index],
-                         coordinates(completed_qm_rg),
-                         completed_qm_rg@data)
+                         coordinates(final_sp),
+                         final_sp@data)
   if (index == 1) {
     final_dataset_merge <- final_dataset
   } else {
@@ -104,3 +107,4 @@ for (index in seq_along(rg_codes)) {
   }
 }
 # write.csv(final_dataset_merge, "/home/csaybar/day.csv")
+

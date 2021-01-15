@@ -1649,7 +1649,7 @@ complete_CUTOFF_d <- function(path, sp_data, spatial_databases) {
   }
 }
 
-complete_qm_d <- function(path, sat_value, sp_data) {
+complete_qm_d <- function(path, sat_value, sp_data, rg_code) {
   load(sprintf("%s/data/qm_models.RData", path))
   # 1. Create a sp object of the rain gauge of interest
   rg_data <- as.numeric(sp_data[-1]@data)
@@ -1753,8 +1753,6 @@ complete_time_series_m <-  function(path, sp_data, spatial_databases, sat_value,
   return(sp_data)
 }
 
-
-
 complete_time_series_d <-  function(path, sp_data, spatial_databases, sat_value, method = "CUTOFF+QM") {
   methods <- strsplit(method, "\\+")[[1]]
   method_name_cond  <- all(methods %in% c("CUTOFF", "QM"))
@@ -1771,17 +1769,21 @@ complete_time_series_d <-  function(path, sp_data, spatial_databases, sat_value,
       run_model <- sprintf("%s(path, sp_data, spatial_databases)", methods)
       sp_data <- eval(parse(text=run_model))
     } else if (methods == "complete_qm_d") {
-      run_model <- sprintf("%s(path, sat_value, sp_data)", methods)
+      rg_code <- sp_data$code
+      run_model <- sprintf("%s(path, sat_value, sp_data, rg_code)", methods)
       sp_data <- eval(parse(text=run_model))
     }
   }
   else if(length(methods) == 2) {
     run_model1 <- "complete_CUTOFF_d(path, sp_data, spatial_databases)"
-    run_model2 <- "complete_qm_d(path, sat_value, sp_data)"
+    run_model2 <- "complete_qm_d(path, sat_value, sp_data, rg_code)"
     if (method == "CUTOFF+QM") {
+      rg_code <- sp_data$code
       sp_data <- eval(parse(text=run_model1))
+      sp_data@data <- cbind(code = rg_code, sp_data@data)
       sp_data <- eval(parse(text=run_model2))
     } else if (method == "QM+CUTOFF") {
+      rg_code <- sp_data$code
       sp_data <- eval(parse(text=run_model2))
     }
   }
